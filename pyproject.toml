@@ -8,4 +8,9 @@ dependencies = [
     "autogen-agentchat>=0.7.5",
     "autogen-core>=0.7.5",
     "autogen-ext[ollama,openai]>=0.7.5",
+    "dotenv>=0.9.9",
+    "ipython>=9.6.0",
+    "pandas>=2.3.3",
+    "pydantic>=2.11.10",
+    "rich>=14.2.0",
 ]
