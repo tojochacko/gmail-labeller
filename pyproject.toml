@@ -13,4 +13,5 @@ dependencies = [
     "pandas>=2.3.3",
     "pydantic>=2.11.10",
     "rich>=14.2.0",
+    "composio>=0.8.0",
 ]
