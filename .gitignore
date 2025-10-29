@@ -11,3 +11,4 @@ wheels/
 
 # Modified by developer
 .env
+config/.env*
