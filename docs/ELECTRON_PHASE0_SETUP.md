@@ -4,11 +4,11 @@
 - Node.js: `v24.10.0` (verified via `node -v`)
 - pnpm: `10.20.0` (verified via `pnpm -v`)
 - Python: `3.12.3` (verified via `python --version`)
-- Supabase CLI: **not installed** (run `brew install supabase/tap/supabase` or use the official installer)
+- Access to Supabase dashboard & API (project URL + service role key)
 - Composio credentials: required `COMPOSIO_API_KEY` and Gmail toolkit configuration (obtain from Composio dashboard)
 - OpenAI credentials for agent runtime: `OPENAI_API_KEY`
 
-All contributors should install the Supabase CLI, authenticate with `supabase login`, and ensure Docker is available for local Supabase emulation if desired.
+Supabase migrations will be applied via the hosted dashboard or REST API (no CLI dependency). Keep the service role key handy for scripted SQL execution.
 
 ## Secrets & Configuration Strategy
 - Copy `config/env.example` to `.env` (backend) and `.env.app` (Electron) as needed; never commit populated files.
@@ -37,7 +37,6 @@ Row Level Security should be enabled with policies scoping rows to the authentic
 - Use Git locally for commits; skip remote GitHub project boards or workflows for this iteration.
 
 ## Outstanding To-Dos
-- [ ] Install Supabase CLI and authenticate.
-- [ ] Populate Supabase project with the schema draft (SQL migration or Prisma).
+- [ ] Populate Supabase project with the schema draft via SQL editor or REST API (see `docs/SUPABASE_API_MIGRATIONS.md`).
 - [ ] Provision secure storage for encryption keys (1Password/Secrets Manager).
-- [ ] Set up the GitHub Projects board and invite collaborators.
+- [ ] Set up the manual tracking board and invite collaborators.
