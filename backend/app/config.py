@@ -25,8 +25,10 @@ class Settings(BaseSettings):
     # Encryption
     fernet_secret_key: SecretStr = Field(..., alias="FERNET_SECRET_KEY")
 
-    # External runtimes
-    agent_runtime_base_url: AnyHttpUrl = Field(..., alias="AGENT_RUNTIME_BASE_URL")
+    # External runtimes (optional - uses mock mode if not provided)
+    agent_runtime_base_url: Optional[AnyHttpUrl] = Field(
+        default=None, alias="AGENT_RUNTIME_BASE_URL"
+    )
 
     # Composio
     composio_api_key: SecretStr = Field(..., alias="COMPOSIO_API_KEY")
