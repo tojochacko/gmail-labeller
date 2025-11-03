@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
@@ -165,7 +165,9 @@ function mapEmailResponse(item: BackendEmailItem): EmailItem {
   }
 }
 
-ipcMain.handle('oauth:start', async (event, payload: OAuthStartRequest) => {
+ipcMain.handle(
+  'oauth:start',
+  async (event: IpcMainInvokeEvent, payload: OAuthStartRequest) => {
   const callbackUrl = ensureOAuthServer()
 
   const result = await apiClient.request<{ authorization_url: string; state: string }>(
@@ -192,9 +194,12 @@ ipcMain.handle('oauth:start', async (event, payload: OAuthStartRequest) => {
     state: result.state,
     callbackUrl,
   }
-})
+  },
+)
 
-ipcMain.handle('oauth:status', async (_event, args: { userId: string }) => {
+ipcMain.handle(
+  'oauth:status',
+  async (_event: IpcMainInvokeEvent, args: { userId: string }) => {
   try {
     const result = await apiClient.request<{ connected: boolean; expires_at?: string }>(
       `/api/oauth/status/${args.userId}`,
@@ -208,9 +213,12 @@ ipcMain.handle('oauth:status', async (_event, args: { userId: string }) => {
       connected: false,
     }
   }
-})
+  },
+)
 
-ipcMain.handle('emails:fetch', async (_event, payload: EmailFetchRequest) => {
+ipcMain.handle(
+  'emails:fetch',
+  async (_event: IpcMainInvokeEvent, payload: EmailFetchRequest) => {
   const result = await apiClient.request<BackendEmailList>('/api/emails', {
     searchParams: {
       user_id: payload.userId,
@@ -221,9 +229,12 @@ ipcMain.handle('emails:fetch', async (_event, payload: EmailFetchRequest) => {
   return {
     items: result.items.map(mapEmailResponse),
   }
-})
+  },
+)
 
-ipcMain.handle('labels:apply', async (_event, payload: ApplyLabelRequest) => {
+ipcMain.handle(
+  'labels:apply',
+  async (_event: IpcMainInvokeEvent, payload: ApplyLabelRequest) => {
   const result = await apiClient.request<{ success: boolean; applied_label: string }>(
     '/api/labels',
     {
@@ -241,9 +252,12 @@ ipcMain.handle('labels:apply', async (_event, payload: ApplyLabelRequest) => {
     success: result.success,
     appliedLabel: result.applied_label,
   }
-})
+  },
+)
 
-ipcMain.handle('runs:trigger', async (_event, payload: AgentRunRequest) => {
+ipcMain.handle(
+  'runs:trigger',
+  async (_event: IpcMainInvokeEvent, payload: AgentRunRequest) => {
   const result = await apiClient.request<{ run_id: string; status: string }>(
     '/api/runs',
     {
@@ -261,9 +275,12 @@ ipcMain.handle('runs:trigger', async (_event, payload: AgentRunRequest) => {
     runId: result.run_id,
     status: result.status,
   }
-})
+  },
+)
 
-ipcMain.handle('runs:status', async (_event, args: { runId: string }) => {
+ipcMain.handle(
+  'runs:status',
+  async (_event: IpcMainInvokeEvent, args: { runId: string }) => {
   const result = await apiClient.request<{
     run_id: string
     status: string
@@ -279,4 +296,5 @@ ipcMain.handle('runs:status', async (_event, args: { runId: string }) => {
     updatedAt: result.updated_at,
     errorMessage: result.error_message ?? null,
   }
-})
+  },
+)

@@ -2,6 +2,11 @@
 
 import type { ElectronAPI } from './shared/ipc'
 
-interface Window {
-  electronAPI: ElectronAPI
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI
+    ipcRenderer: typeof import('electron').ipcRenderer
+  }
 }
+
+export {}

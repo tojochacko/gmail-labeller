@@ -1,7 +1,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { clearSession, loadSession, saveSession, type StoredSession } from './utils/sessionStorage'
-import type { EmailItem, OAuthCompletionPayload } from './shared/ipc'
+import type {
+  EmailItem,
+  OAuthCompletionPayload,
+  OAuthStatusResponse,
+} from './shared/ipc'
 
 import './App.css'
 
@@ -49,7 +53,7 @@ function App() {
 
     api.oauth
       .status(session.userId)
-      .then((result) => {
+      .then((result: OAuthStatusResponse) => {
         if (cancelled) return
         if (result.connected) {
           setConnectionState('connected')
@@ -59,7 +63,7 @@ function App() {
           setConnectionState('disconnected')
         }
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.warn('Failed to resolve OAuth status', error)
         if (!cancelled) {
           setConnectionState('disconnected')

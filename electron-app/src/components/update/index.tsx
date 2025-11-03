@@ -1,7 +1,9 @@
 import type { ProgressInfo } from 'electron-updater'
+import type { IpcRendererEvent } from 'electron'
 import { useCallback, useEffect, useState } from 'react'
 import Modal from '@/components/update/Modal'
 import Progress from '@/components/update/Progress'
+import type { VersionInfo, ErrorType } from './types'
 import './update.css'
 
 const Update = () => {
@@ -36,7 +38,7 @@ const Update = () => {
     }
   }
 
-  const onUpdateCanAvailable = useCallback((_event: Electron.IpcRendererEvent, arg1: VersionInfo) => {
+  const onUpdateCanAvailable = useCallback((_event: IpcRendererEvent, arg1: VersionInfo) => {
     setVersionInfo(arg1)
     setUpdateError(undefined)
     // Can be update
@@ -53,16 +55,16 @@ const Update = () => {
     }
   }, [])
 
-  const onUpdateError = useCallback((_event: Electron.IpcRendererEvent, arg1: ErrorType) => {
+  const onUpdateError = useCallback((_event: IpcRendererEvent, arg1: ErrorType) => {
     setUpdateAvailable(false)
     setUpdateError(arg1)
   }, [])
 
-  const onDownloadProgress = useCallback((_event: Electron.IpcRendererEvent, arg1: ProgressInfo) => {
+  const onDownloadProgress = useCallback((_event: IpcRendererEvent, arg1: ProgressInfo) => {
     setProgressInfo(arg1)
   }, [])
 
-  const onUpdateDownloaded = useCallback((_event: Electron.IpcRendererEvent, ...args: any[]) => {
+  const onUpdateDownloaded = useCallback((_event: IpcRendererEvent, ...args: unknown[]) => {
     setProgressInfo({ percent: 100 })
     setModalBtn(state => ({
       ...state,
