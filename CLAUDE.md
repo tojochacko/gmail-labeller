@@ -34,14 +34,47 @@ Avoid building functionality on speculation. Implement features only when they a
 
 This is an Autogen playground for AI agent development using Microsoft's Autogen framework (v0.7.5+). The project demonstrates various multi-agent architectures including simple agents, customer support systems, group chats, and integration with external tools like Gmail via Composio. The developer would want to test various Agentic product ideas in this codebase before full-fledgedly committing to one.
 
+### Project Structure
+
+The project consists of two main components:
+
+1. **Backend (FastAPI)** - Python-based API server (`/workspaces/autogen-test/backend/`)
+   - FastAPI REST API for OAuth, email operations, and agent runs
+   - Composio integration for Gmail operations
+   - Supabase for data persistence
+   - Runs in devcontainer on port 8000
+
+2. **Frontend (Electron App)** - Desktop application (`/workspaces/autogen-test/electron-app/`)
+   - Electron-based desktop client for Gmail labeling
+   - React + TypeScript + Vite
+   - Communicates with backend API
+   - **Runs on host machine (NOT in devcontainer due to GUI requirements)**
+
+### Key Applications
+
+- **Command-line demos**: Autogen agent examples (main.py, customer-support.py, etc.)
+- **Backend API**: FastAPI server for OAuth and Gmail operations
+- **Electron Desktop App**: Gmail Labeler with AI-powered label suggestions
+
 ## Key Dependencies
 
+### Backend (Python)
 - **autogen-agentchat**, **autogen-core**, **autogen-ext**: Core framework for building AI agents
+- **FastAPI**: Modern web framework for building APIs
 - **OpenAI**: Primary LLM provider (gpt-4o, gpt-4o-mini)
 - **Ollama**: Alternative local LLM support (configured for host.docker.internal:11436)
-- **Composio**: External tool integration platform (e.g., Gmail)
-- **pydantic**: Data validation for message schemas
-- **rich**: Console output formatting
+- **Composio**: External tool integration platform (Gmail operations via Composio 1.0 API)
+- **Supabase**: PostgreSQL database for data persistence
+- **Pydantic v2**: Data validation for message schemas and settings
+- **Rich**: Console output formatting
+- **Uvicorn**: ASGI server for FastAPI
+
+### Frontend (TypeScript/JavaScript)
+- **Electron**: Desktop application framework (v39.0.0)
+- **React**: UI component library
+- **Vite**: Build tool and development server
+- **TypeScript**: Type-safe JavaScript
+- **pnpm**: Fast package manager
 
 ## Environment Setup
 
@@ -50,6 +83,55 @@ The project uses a devcontainer with:
 - Base image: `mcr.microsoft.com/devcontainers/base:ubuntu`
 - Docker-outside-of-docker for container management
 - Python with `uv` package manager
+
+### ⚠️ Critical: Development Workflow (Backend + Frontend)
+
+**IMPORTANT**: Due to GUI requirements, the Electron app CANNOT run inside the devcontainer.
+
+#### Hybrid Development Approach
+
+1. **Backend (Python/FastAPI)** - Runs IN devcontainer ✅
+   - All Python code and backend API
+   - Database operations
+   - Autogen agent examples
+   - Testing and linting
+
+2. **Frontend (Electron App)** - Runs ON HOST MACHINE ⚠️
+   - Electron requires GUI libraries (libglib, X11, etc.) not available in headless containers
+   - Must be run directly on your host machine
+   - Connects to backend via `http://localhost:8000` (port forwarded from devcontainer)
+
+#### Quick Start Commands
+
+**Terminal 1 (DevContainer) - Start Backend:**
+```bash
+cd /workspaces/autogen-test
+uv run uvicorn backend.app.main:create_app --reload --host 0.0.0.0 --port 8000
+```
+⚠️ **CRITICAL**: Use `0.0.0.0` (NOT `127.0.0.1`) so the backend is accessible from host machine
+
+**Terminal 2 (Host Machine) - Start Electron App:**
+```bash
+# Run on your host machine (outside devcontainer)
+cd /path/to/autogen-test/electron-app
+pnpm install  # First time only
+pnpm dev
+```
+
+#### What Works in DevContainer
+
+✅ **You CAN do these in devcontainer:**
+- TypeScript compilation (`npx tsc --noEmit`)
+- Linting (`pnpm lint`)
+- Unit tests (`pnpm test`)
+- Production builds (`pnpm build`)
+- Backend development
+- Python testing and linting
+
+❌ **You CANNOT do this in devcontainer:**
+- Run `pnpm dev` (Electron GUI requires display server)
+
+**For alternative solutions**: See `ELECTRON_DEVCONTAINER_ISSUE.md` (Xvfb, X11 forwarding)
 
 ### UV Package Management
 
@@ -123,18 +205,53 @@ uv run pre-commit run --all-files
 ```
 
 ### Running Examples
+
+#### Autogen Agent Examples (DevContainer)
 ```bash
 # Run the basic agent example
-python main.py
+uv run python main.py
 
 # Run customer support multi-agent system
-python customer-support.py
+uv run python customer-support.py
 
 # Run group chat with multiple specialized agents
-python group-chat-example.py
+uv run python group-chat-example.py
 
 # Run Gmail organizer (requires Composio setup)
-python gmail-organizer.py
+uv run python gmail-organizer.py
+```
+
+#### Backend API Server (DevContainer)
+```bash
+# Start the FastAPI backend server
+cd /workspaces/autogen-test
+uv run uvicorn backend.app.main:create_app --reload --host 0.0.0.0 --port 8000
+
+# Verify backend is running
+curl http://localhost:8000/health
+# Expected: {"status":"ok"}
+
+# View API documentation
+# Open http://localhost:8000/docs in browser
+```
+
+#### Electron Desktop App (Host Machine)
+```bash
+# Start Electron app (RUN ON HOST MACHINE, NOT IN DEVCONTAINER)
+cd /path/to/autogen-test/electron-app
+pnpm dev
+
+# Production build (can run in devcontainer)
+cd /workspaces/autogen-test/electron-app
+pnpm build
+
+# TypeScript type checking (devcontainer)
+cd /workspaces/autogen-test/electron-app
+npx tsc --noEmit
+
+# Linting (devcontainer)
+cd /workspaces/autogen-test/electron-app
+pnpm lint
 ```
 
 ## 📋 Style & Conventions
@@ -725,7 +842,9 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
 - Delegate tools: Transfer control to another agent (e.g., `transfer_to_sales_agent_tool`)
 - Tools are defined using `FunctionTool` wrapper around Python functions
 
-## Key Files
+## Key Files and Directories
+
+### Autogen Agent Examples (Root Directory)
 
 - **main.py**: Simple agent demonstration with message routing and multiple message types
 - **customer-support.py**: Complex multi-agent customer service system with:
@@ -741,15 +860,116 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
   - Image generation with DALL-E integration
   - Rich console output for better UX
 
-- **gmail-organizer.py**: Work-in-progress Composio integration for Gmail automation
+- **gmail-organizer.py**: Composio integration for Gmail automation
+
+### Backend Directory (`/backend/`)
+
+- **backend/app/main.py**: FastAPI application factory and route registration
+- **backend/app/config.py**: Environment variables and application settings
+- **backend/app/routes/**: API route handlers
+  - `oauth.py`: OAuth start and callback endpoints
+  - `emails.py`: Email fetching endpoints
+  - `labels.py`: Label application endpoints
+  - `agents.py`: Agent run triggering and status endpoints
+- **backend/app/services/**: Business logic layer
+  - `gmail_toolkit.py`: Composio Gmail adapter (Composio 1.0 API)
+  - `agent_service.py`: AI agent integration (with mock mode)
+  - `supabase_service.py`: Database operations
+- **backend/app/schemas/**: Pydantic models for request/response validation
+- **backend/tests/**: Comprehensive test suite (15/15 tests passing)
+  - `test_composio_adapter.py`: Composio 1.0 integration tests
+  - `test_routes.py`: OAuth workflow tests
+
+### Electron App Directory (`/electron-app/`)
+
+- **electron-app/electron/main/index.ts**: Electron main process and IPC handlers
+- **electron-app/src/App.tsx**: Main React application component
+- **electron-app/src/components/**: UI components
+  - `update/index.tsx`: Auto-updater component
+  - `update/types.ts`: TypeScript type definitions
+- **electron-app/src/shared/ipc.ts**: IPC type definitions
+- **electron-app/package.json**: Node.js dependencies (electron@39.0.0)
+- **electron-app/tsconfig.json**: TypeScript configuration
+
+### Database
+
+- **database/supabase_schema.sql**: Complete database schema for Supabase
+  - Tables: users, gmail_tokens, emails, agent_runs
+  - Indexes, RLS policies, triggers
+
+### Documentation
+
+- **PHASE_1_COMPLETION_REPORT.md**: TypeScript fixes and Electron package installation
+- **PHASE_2_COMPLETION_SUMMARY.md**: Backend integration and configuration
+- **ELECTRON_DEVCONTAINER_ISSUE.md**: DevContainer GUI limitation documentation
+- **PROJECT_STATUS.md**: Current project status and testing instructions
+- **COMPOSIO_INTEGRATION_FIX.md**: Composio 1.0 API migration guide
+- **OAUTH_TEST_REPORT.md**: OAuth workflow test documentation
 
 ## Environment Variables
 
-Required in `.env`:
-- `OPENAI_API_KEY`: OpenAI API access
-- `COMPOSIO_API_KEY`: Composio platform access (for tool integrations)
+### Backend Environment Variables (`.env`)
 
-**Note**: The .env file contains API keys and should never be committed to version control.
+Required for the FastAPI backend and Gmail Labeler Electron app:
+
+```bash
+# ============================================
+# SUPABASE CONFIGURATION (Required)
+# ============================================
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+SUPABASE_ANON_KEY=your_anon_key_here
+
+# ============================================
+# ENCRYPTION (Required)
+# ============================================
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FERNET_SECRET_KEY=your_32_byte_base64_key_here
+
+# ============================================
+# GOOGLE OAUTH (Required for Gmail integration)
+# ============================================
+# Create at: https://console.cloud.google.com/apis/credentials
+GOOGLE_OAUTH_CLIENT_ID=your_client_id_here.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your_client_secret_here
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3005/oauth/callback
+GOOGLE_OAUTH_SCOPE=https://www.googleapis.com/auth/gmail.modify
+
+# ============================================
+# COMPOSIO (Required for Gmail operations)
+# ============================================
+# Get from: https://app.composio.dev/
+COMPOSIO_API_KEY=your_composio_key_here
+COMPOSIO_ACCOUNT_ID=your_auth_config_id_here
+
+# ============================================
+# AI/AGENT CONFIGURATION
+# ============================================
+OPENAI_API_KEY=your_openai_key_here
+
+# AGENT_RUNTIME_BASE_URL (Optional - uses mock mode if not set)
+# AGENT_RUNTIME_BASE_URL=http://localhost:9000
+
+# ============================================
+# OPTIONAL SERVICES
+# ============================================
+# SENTRY_DSN=your_sentry_dsn_here
+```
+
+### Environment Setup
+
+```bash
+# Copy example env file
+cp config/env.example .env
+
+# Generate Fernet encryption key
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Copy output to FERNET_SECRET_KEY in .env
+
+# Edit .env and fill in all required values
+```
+
+**Note**: The `.env` file contains API keys and should NEVER be committed to version control. It is already in `.gitignore`.
 
 ## Agent Lifecycle
 
@@ -760,10 +980,85 @@ Required in `.env`:
 5. Wait for completion: `await runtime.stop_when_idle()`
 6. Clean up: `await runtime.close()` and `await model_client.close()`
 
+## Current Project Status
+
+### Completed Work
+
+✅ **Phase 1: Critical Dependencies & Type Errors** - COMPLETED
+- Electron package installed (v39.0.0)
+- All TypeScript type definitions correct
+- All IPC handlers properly typed
+- TypeScript compilation passes without errors
+
+✅ **Phase 2: Backend Integration & Configuration** - COMPLETED
+- Fernet encryption key generated
+- Environment variables configured
+- Supabase database schema created
+- Mock mode implemented for AgentService
+- Composio 1.0 API integration complete
+- 15/15 tests passing
+
+### Testing Status
+
+**Backend Tests**: 15/15 passing ✅
+- 9 Composio adapter tests
+- 2 OAuth workflow tests
+- 4 API route tests
+
+**Test Commands**:
+```bash
+# Run all backend tests (devcontainer)
+cd /workspaces/autogen-test
+uv run pytest backend/tests/ -v
+
+# Run with coverage
+uv run pytest backend/tests/ --cov=backend/app --cov-report=html
+
+# Run specific test file
+uv run pytest backend/tests/test_composio_adapter.py -v
+
+# Run Electron tests (devcontainer - no GUI needed)
+cd /workspaces/autogen-test/electron-app
+pnpm test
+```
+
+### Ready for End-to-End Testing
+
+Before testing, you must complete these manual steps:
+
+1. **Update Supabase Service Role Key** (Go to Supabase Dashboard → Settings → API)
+2. **Execute Database Schema** (Run `database/supabase_schema.sql` in Supabase SQL Editor)
+3. **Verify Google OAuth Redirect URI** (Ensure `http://localhost:3005/oauth/callback` is authorized)
+
+See **PROJECT_STATUS.md** for detailed instructions.
+
 ## Development Notes
 
+### Autogen Framework
 - All agents run in a single-threaded runtime (no true concurrency)
 - Session isolation is achieved via unique source IDs in TopicId
 - LLM calls are async and support cancellation tokens
 - Tool schemas are automatically generated from function signatures
 - The framework supports both direct execution and agent delegation patterns
+
+### Backend Architecture
+- FastAPI with async/await patterns
+- Dependency injection for services
+- Composio 1.0 API for Gmail operations
+- Mock mode for AgentService (returns hardcoded suggestions when AGENT_RUNTIME_BASE_URL not set)
+- Supabase for PostgreSQL database
+- Fernet encryption for OAuth tokens at rest
+
+### Frontend Architecture
+- Electron main process handles IPC and backend communication
+- React renderer process for UI
+- Vite for fast development builds
+- TypeScript for type safety
+- All IPC channels properly typed with Pydantic-style interfaces
+
+### DevContainer Limitations
+- ⚠️ Electron app CANNOT run in devcontainer (headless environment)
+- ✅ Backend runs perfectly in devcontainer
+- ✅ TypeScript/linting/tests work in devcontainer
+- ✅ Production builds work in devcontainer
+- See **ELECTRON_DEVCONTAINER_ISSUE.md** for alternatives (Xvfb, X11 forwarding)
