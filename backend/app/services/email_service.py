@@ -29,7 +29,11 @@ class EmailService:
         self, user_id: UUID, max_results: int = 20
     ) -> list[EmailItem]:
         tokens = await self._ensure_tokens(user_id)
-        messages = await self._gmail_service.list_messages(tokens, max_results=max_results)
+        messages = await self._gmail_service.list_messages(
+            tokens=tokens,
+            user_id=str(user_id),
+            max_results=max_results
+        )
         logger.info("Fetched {} Gmail messages for user {}", len(messages), user_id)
 
         items: list[EmailItem] = []

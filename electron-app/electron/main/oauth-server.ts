@@ -80,9 +80,59 @@ async function handleCallback(req: IncomingMessage, res: ServerResponse, port: n
     return
   }
 
+  // Check for Composio-managed OAuth callback (new format)
+  const status = url.searchParams.get('status')
+  const connectedAccountId = url.searchParams.get('connectedAccountId')
+
+  // Check for traditional OAuth callback (old format)
   const state = url.searchParams.get('state')
   const code = url.searchParams.get('code')
 
+  // Handle Composio-managed OAuth callback
+  if (status && connectedAccountId) {
+    // For Composio-managed OAuth, we need to find the session by iterating
+    // since Composio doesn't send back the state parameter
+    const sessionEntry = Array.from(sessions.entries())[0]
+
+    if (!sessionEntry) {
+      sendHtml(res, 400, ERROR_HTML('Session expired. Please restart the connection.'))
+      return
+    }
+
+    const [sessionState, session] = sessionEntry
+
+    try {
+      const result = await apiClient.request<{ connected: boolean; expires_at?: string }>(
+        '/api/oauth/callback',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: session.userId,
+            connected_account_id: connectedAccountId,
+            status,
+          }),
+        },
+      )
+
+      sessions.delete(sessionState)
+      sendHtml(res, 200, SUCCESS_HTML)
+
+      completionHandler?.(session, {
+        connected: result.connected,
+        expiresAt: result.expires_at,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected error'
+      sendHtml(res, 500, ERROR_HTML('Failed to complete OAuth handshake.'))
+      completionHandler?.(session, {
+        connected: false,
+        error: message,
+      })
+    }
+    return
+  }
+
+  // Handle traditional OAuth callback
   if (!state || !code) {
     sendHtml(res, 400, ERROR_HTML('Missing OAuth parameters.'))
     return

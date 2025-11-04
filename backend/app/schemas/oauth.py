@@ -25,8 +25,12 @@ class OAuthCallbackRequest(BaseModel):
     """Payload received from the Electron app after OAuth redirect."""
 
     user_id: UUID
-    code: str
-    state: str
+    # Traditional OAuth2 flow parameters
+    code: Optional[str] = None
+    state: Optional[str] = None
+    # Composio-managed OAuth flow parameters
+    connected_account_id: Optional[str] = None
+    status: Optional[str] = None
 
 
 class OAuthCallbackResponse(BaseModel):

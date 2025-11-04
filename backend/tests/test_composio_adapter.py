@@ -16,7 +16,7 @@ class MockConnectionRequest:
     """Mock for Composio ConnectionRequest response."""
 
     def __init__(self, redirect_url: str):
-        self.redirectUrl = redirect_url
+        self.redirect_url = redirect_url
 
 
 class MockToolExecutionResponse:
@@ -70,12 +70,14 @@ async def test_get_authorization_url(mock_composio_client):
     adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
 
     auth_url = await adapter.get_authorization_url(
-        redirect_uri="http://localhost:3000/callback", state="random-state-123"
+        redirect_uri="http://localhost:3000/callback",
+        state="random-state-123",
+        user_id="test-user-456",
     )
 
     # Verify the correct Composio API was called
     mock_composio_client.connected_accounts.initiate.assert_called_once_with(
-        user_id="random-state-123",
+        user_id="test-user-456",
         auth_config_id="auth-config-123",
         callback_url="http://localhost:3000/callback",
     )
@@ -113,11 +115,10 @@ async def test_list_messages(mock_composio_client):
         user_id="user-456",
     )
 
-    # Verify the correct Composio API was called
+    # Verify the correct Composio API was called (only user_id, no connected_account_id)
     mock_composio_client.tools.execute.assert_called_once_with(
         slug="GMAIL_FETCH_EMAILS",
         arguments={"max_results": 10},
-        connected_account_id="conn-id-123",
         user_id="user-456",
     )
 
@@ -139,11 +140,10 @@ async def test_list_messages_with_composio_managed_token(mock_composio_client):
         user_id="user-789",
     )
 
-    # Should use user_id instead of connected_account_id
+    # Should use only user_id (Composio looks up the connected account automatically)
     mock_composio_client.tools.execute.assert_called_once_with(
         slug="GMAIL_FETCH_EMAILS",
         arguments={"max_results": 20},
-        connected_account_id=None,
         user_id="user-789",
     )
 
@@ -164,11 +164,10 @@ async def test_apply_label(mock_composio_client):
         user_id="user-abc",
     )
 
-    # Verify the correct Composio API was called
+    # Verify the correct Composio API was called (only user_id, no connected_account_id)
     mock_composio_client.tools.execute.assert_called_once_with(
         slug="GMAIL_ADD_LABEL",
         arguments={"message_id": "msg-123", "label_ids": ["label-456"]},
-        connected_account_id="conn-id-789",
         user_id="user-abc",
     )
 
@@ -202,7 +201,8 @@ async def test_gmail_service_with_adapter(mock_composio_client):
 
     # Test create_authorization_url
     state = "test-state-789"
-    auth_url = await gmail_service.create_authorization_url(state=state)
+    user_id = "test-user-999"
+    auth_url = await gmail_service.create_authorization_url(state=state, user_id=user_id)
     assert auth_url.startswith("https://accounts.google.com")
 
     # Test exchange_code_for_tokens
@@ -212,7 +212,7 @@ async def test_gmail_service_with_adapter(mock_composio_client):
 
     # Test list_messages
     mock_composio_client.tools.execute.reset_mock()
-    messages = await gmail_service.list_messages(tokens=tokens, max_results=15)
+    messages = await gmail_service.list_messages(tokens=tokens, user_id=user_id, max_results=15)
     assert len(messages) == 1
 
 
@@ -225,7 +225,7 @@ async def test_adapter_handles_empty_response(mock_composio_client):
     adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
 
     messages = await adapter.list_messages(
-        access_token="conn-id", refresh_token="not-used", max_results=10
+        access_token="conn-id", refresh_token="not-used", max_results=10, user_id="test-user"
     )
 
     assert messages == []

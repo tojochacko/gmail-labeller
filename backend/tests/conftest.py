@@ -90,14 +90,16 @@ class FakeGmailService:
             expires_at=datetime.now(timezone.utc),
         )
 
-    async def create_authorization_url(self, state: str) -> str:
+    async def create_authorization_url(self, state: str, user_id: str) -> str:
         self.generated_state.append(state)
         return f"https://example.com/oauth?state={state}"
 
     async def exchange_code_for_tokens(self, code: str) -> GmailTokens:
         return self._tokens
 
-    async def list_messages(self, tokens: GmailTokens, max_results: int = 20) -> list[dict]:
+    async def list_messages(
+        self, tokens: GmailTokens, user_id: str, max_results: int = 20
+    ) -> list[dict]:
         return [
             {
                 "id": "msg-1",
@@ -112,7 +114,9 @@ class FakeGmailService:
             }
         ]
 
-    async def apply_label(self, message_id: str, label_id: str, tokens: GmailTokens) -> None:
+    async def apply_label(
+        self, message_id: str, label_id: str, tokens: GmailTokens, user_id: str
+    ) -> None:
         self.applied_labels.append((message_id, label_id))
 
 

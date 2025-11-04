@@ -32,23 +32,26 @@ class ComposioGmailAdapter:
         self._client = Composio(api_key=api_key)
         self._auth_config_id = auth_config_id
 
-    async def get_authorization_url(self, redirect_uri: str, state: str) -> str:
+    async def get_authorization_url(self, redirect_uri: str, state: str, user_id: str) -> str:
         """Get OAuth authorization URL for Gmail.
 
         Args:
             redirect_uri: Redirect URI for OAuth callback
-            state: OAuth state parameter for CSRF protection (stored in user_id)
+            state: OAuth state parameter for CSRF protection
+            user_id: User's UUID to use as user_id in Composio
 
         Returns:
             Authorization URL for user to visit
         """
-        # Initiate connection for this user (using state as temporary user_id)
+        # Initiate connection for this user (use actual user_id)
+        logger.debug(f"Initiating Composio connection for user_id: {user_id}")
         connection_request = self._client.connected_accounts.initiate(
-            user_id=state,  # Use state as user identifier during OAuth flow
+            user_id=user_id,  # Use actual user UUID as user_id in Composio
             auth_config_id=self._auth_config_id,
             callback_url=redirect_uri,
         )
-        return connection_request.redirectUrl
+        logger.debug(f"Connection initiated, redirect_url: {connection_request.redirect_url}")
+        return connection_request.redirect_url
 
     async def exchange_code_for_tokens(self, code: str, redirect_uri: str) -> dict:
         """Exchange authorization code for access tokens.
@@ -88,19 +91,29 @@ class ComposioGmailAdapter:
             access_token: Connection ID from Composio (stored as access_token)
             refresh_token: Not used (Composio uses connection internally)
             max_results: Maximum number of messages to return
-            user_id: User ID to identify which connection to use (uses access_token if not provided)
+            user_id: User's UUID (used as user_id in Composio)
 
         Returns:
             List of message dictionaries
         """
-        # Use access_token as connected_account_id if user_id not provided
-        connected_account_id = access_token if access_token != "composio_managed" else None
+        # Debug: Log user_id and list connected accounts
+        logger.debug(f"Fetching emails for user_id: {user_id}")
+        try:
+            accounts = self._client.connected_accounts.list(user_ids=[user_id])
+            logger.debug(f"Connected accounts for user {user_id}: {accounts}")
+            if hasattr(accounts, 'items'):
+                logger.debug(f"Number of connected accounts: {len(accounts.items)}")
+                for acc in accounts.items:
+                    logger.debug(f"  - Account ID: {acc.id}, Status: {acc.status}")
+        except Exception as e:
+            logger.warning(f"Failed to list connected accounts: {e}")
 
+        # Use user_id to let Composio automatically find the connected account
+        # This avoids entity_id mismatch errors
         result = self._client.tools.execute(
             slug="GMAIL_FETCH_EMAILS",
             arguments={"max_results": max_results},
-            connected_account_id=connected_account_id,
-            user_id=user_id,
+            user_id=user_id,  # Composio will look up the connected account for this user
         )
 
         # Parse and return messages
@@ -123,16 +136,14 @@ class ComposioGmailAdapter:
             label_id: Gmail label ID to apply
             access_token: Connection ID from Composio (stored as access_token)
             refresh_token: Not used (Composio uses connection internally)
-            user_id: User ID to identify which connection to use (uses access_token if not provided)
+            user_id: User's UUID (used as user_id in Composio)
         """
-        # Use access_token as connected_account_id if user_id not provided
-        connected_account_id = access_token if access_token != "composio_managed" else None
-
+        # Use user_id to let Composio automatically find the connected account
+        # This avoids entity_id mismatch errors
         self._client.tools.execute(
             slug="GMAIL_ADD_LABEL",
             arguments={"message_id": message_id, "label_ids": [label_id]},
-            connected_account_id=connected_account_id,
-            user_id=user_id,
+            user_id=user_id,  # Composio will look up the connected account for this user
         )
 
 
@@ -166,11 +177,12 @@ class GmailService:
         self._adapter = adapter
         self._settings = settings
 
-    async def create_authorization_url(self, state: str) -> str:
-        logger.debug("Generating Gmail OAuth URL with state %s", state)
+    async def create_authorization_url(self, state: str, user_id: str) -> str:
+        logger.debug("Generating Gmail OAuth URL with state %s for user %s", state, user_id)
         return await self._adapter.get_authorization_url(
             redirect_uri=str(self._settings.google_oauth_redirect_uri),
             state=state,
+            user_id=user_id,
         )
 
     async def exchange_code_for_tokens(self, code: str) -> GmailTokens:
@@ -198,13 +210,15 @@ class GmailService:
     async def list_messages(
         self,
         tokens: GmailTokens,
+        user_id: str,
         max_results: int = 20,
     ) -> list[dict]:
-        logger.debug("Listing Gmail messages for max_results=%s", max_results)
+        logger.debug("Listing Gmail messages for user %s, max_results=%s", user_id, max_results)
         return await self._adapter.list_messages(
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
             max_results=max_results,
+            user_id=user_id,
         )
 
     async def apply_label(
@@ -212,11 +226,13 @@ class GmailService:
         message_id: str,
         label_id: str,
         tokens: GmailTokens,
+        user_id: str,
     ) -> None:
-        logger.debug("Applying label %s to message %s", label_id, message_id)
+        logger.debug("Applying label %s to message %s for user %s", label_id, message_id, user_id)
         await self._adapter.apply_label(
             message_id=message_id,
             label_id=label_id,
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
+            user_id=user_id,
         )

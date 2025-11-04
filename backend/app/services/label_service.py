@@ -29,6 +29,7 @@ class LabelService:
             message_id=request.gmail_message_id,
             label_id=label_id,
             tokens=tokens,
+            user_id=str(request.user_id),
         )
         logger.info(
             "Applied Gmail label {} to message {} for user {}",
