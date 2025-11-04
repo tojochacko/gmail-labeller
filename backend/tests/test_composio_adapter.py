@@ -113,12 +113,13 @@ async def test_list_messages(mock_composio_client):
         refresh_token="not-used",
         max_results=10,
         user_id="user-456",
+        query="in:inbox",
     )
 
     # Verify the correct Composio API was called (only user_id, no connected_account_id)
     mock_composio_client.tools.execute.assert_called_once_with(
         slug="GMAIL_FETCH_EMAILS",
-        arguments={"max_results": 10},
+        arguments={"max_results": 10, "query": "in:inbox"},
         user_id="user-456",
     )
 
@@ -138,12 +139,14 @@ async def test_list_messages_with_composio_managed_token(mock_composio_client):
         refresh_token="composio_managed",
         max_results=20,
         user_id="user-789",
+        query=None,  # Test with None (will use default "in:inbox")
     )
 
     # Should use only user_id (Composio looks up the connected account automatically)
+    # query=None should default to "in:inbox"
     mock_composio_client.tools.execute.assert_called_once_with(
         slug="GMAIL_FETCH_EMAILS",
-        arguments={"max_results": 20},
+        arguments={"max_results": 20, "query": "in:inbox"},
         user_id="user-789",
     )
 
@@ -225,7 +228,11 @@ async def test_adapter_handles_empty_response(mock_composio_client):
     adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
 
     messages = await adapter.list_messages(
-        access_token="conn-id", refresh_token="not-used", max_results=10, user_id="test-user"
+        access_token="conn-id",
+        refresh_token="not-used",
+        max_results=10,
+        user_id="test-user",
+        query="in:inbox",
     )
 
     assert messages == []

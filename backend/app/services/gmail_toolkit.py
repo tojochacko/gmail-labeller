@@ -84,6 +84,7 @@ class ComposioGmailAdapter:
         refresh_token: str,
         max_results: int = 20,
         user_id: str | None = None,
+        query: str | None = None,
     ) -> list[dict]:
         """List Gmail messages for the user.
 
@@ -92,6 +93,7 @@ class ComposioGmailAdapter:
             refresh_token: Not used (Composio uses connection internally)
             max_results: Maximum number of messages to return
             user_id: User's UUID (used as user_id in Composio)
+            query: Gmail search query (e.g., "in:inbox", "is:unread", or empty for all)
 
         Returns:
             List of message dictionaries
@@ -110,15 +112,47 @@ class ComposioGmailAdapter:
 
         # Use user_id to let Composio automatically find the connected account
         # This avoids entity_id mismatch errors
+        logger.debug(f"Calling GMAIL_FETCH_EMAILS with max_results={max_results}, query={query}")
+
+        # Build arguments - try with query parameter
+        arguments = {
+            "max_results": max_results,
+        }
+
+        # Add query if provided, otherwise try "in:inbox" to get inbox emails
+        # If query is explicitly empty string, don't add it (to get all emails)
+        if query is not None:
+            arguments["query"] = query
+        else:
+            # Default to inbox emails
+            arguments["query"] = "in:inbox"
+            logger.debug("Using default query: 'in:inbox'")
+
+        logger.debug(f"GMAIL_FETCH_EMAILS arguments: {arguments}")
         result = self._client.tools.execute(
             slug="GMAIL_FETCH_EMAILS",
-            arguments={"max_results": max_results},
+            arguments=arguments,
             user_id=user_id,  # Composio will look up the connected account for this user
         )
 
+        # Debug: Log the raw result
+        logger.debug(f"GMAIL_FETCH_EMAILS result type: {type(result)}")
+        logger.debug(f"GMAIL_FETCH_EMAILS result: {result}")
+
+        ##Bug: result is a dict type not an object
+        if hasattr(result, "data"):
+            logger.debug(f"Result has data attribute, type: {type(result.data)}, value: {result.data}")
+        else:
+            logger.debug("Result does not have data attribute")
+            logger.debug(f"Result attributes: {dir(result)}")
+
         # Parse and return messages
         if hasattr(result, "data") and result.data:
-            return result.data if isinstance(result.data, list) else [result.data]
+            messages = result.data if isinstance(result.data, list) else [result.data]
+            logger.info(f"Returning {len(messages)} messages from Composio")
+            return messages
+
+        logger.warning("No messages returned from Composio")
         return []
 
     async def apply_label(
@@ -212,13 +246,15 @@ class GmailService:
         tokens: GmailTokens,
         user_id: str,
         max_results: int = 20,
+        query: str | None = None,
     ) -> list[dict]:
-        logger.debug("Listing Gmail messages for user %s, max_results=%s", user_id, max_results)
+        logger.debug("Listing Gmail messages for user %s, max_results=%s, query=%s", user_id, max_results, query)
         return await self._adapter.list_messages(
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
             max_results=max_results,
             user_id=user_id,
+            query=query,
         )
 
     async def apply_label(

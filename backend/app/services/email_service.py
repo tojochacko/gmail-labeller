@@ -26,21 +26,30 @@ class EmailService:
         self._supabase = supabase
 
     async def fetch_latest_emails(
-        self, user_id: UUID, max_results: int = 20
+        self, user_id: UUID, max_results: int = 20, query: str | None = None
     ) -> list[EmailItem]:
+        logger.info(f"Fetching emails for user {user_id}, max_results={max_results}, query={query}")
         tokens = await self._ensure_tokens(user_id)
         messages = await self._gmail_service.list_messages(
             tokens=tokens,
             user_id=str(user_id),
-            max_results=max_results
+            max_results=max_results,
+            query=query,
         )
-        logger.info("Fetched {} Gmail messages for user {}", len(messages), user_id)
+        logger.info(f"Fetched {len(messages)} Gmail messages for user {user_id}")
+
+        if len(messages) == 0:
+            logger.warning(f"No messages returned from Gmail for user {user_id}")
+        else:
+            logger.debug(f"First message sample: {messages[0] if messages else None}")
 
         items: list[EmailItem] = []
         for raw in messages:
             item = self._parse_email(raw)
             await self._supabase.upsert_email(user_id, item)
             items.append(item)
+
+        logger.info(f"Returning {len(items)} parsed email items")
         return items
 
     async def _ensure_tokens(self, user_id: UUID) -> GmailTokens:

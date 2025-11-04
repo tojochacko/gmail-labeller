@@ -98,7 +98,7 @@ class FakeGmailService:
         return self._tokens
 
     async def list_messages(
-        self, tokens: GmailTokens, user_id: str, max_results: int = 20
+        self, tokens: GmailTokens, user_id: str, max_results: int = 20, query: str | None = None
     ) -> list[dict]:
         return [
             {
@@ -131,7 +131,9 @@ class FakeEmailService:
             received_at=datetime.now(timezone.utc),
         )
 
-    async def fetch_latest_emails(self, user_id: UUID, max_results: int = 20) -> list[EmailItem]:
+    async def fetch_latest_emails(
+        self, user_id: UUID, max_results: int = 20, query: str | None = None
+    ) -> list[EmailItem]:
         return [self._email]
 
 
