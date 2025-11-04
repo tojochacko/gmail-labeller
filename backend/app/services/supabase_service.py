@@ -154,6 +154,260 @@ class SupabaseService:
             error_message=row.get("error_message"),
         )
 
+    # ============================================
+    # Label Patterns Methods (AI Learning)
+    # ============================================
+
+    async def upsert_label_pattern(
+        self,
+        user_id: UUID,
+        label_type: str,
+        pattern_type: str,
+        pattern_value: str,
+    ) -> None:
+        """Insert or update a label pattern (increment occurrence)."""
+        try:
+            # Check if pattern exists
+            response = await asyncio.to_thread(
+                self._query_pattern_sync, user_id, label_type, pattern_type, pattern_value
+            )
+
+            now = datetime.now(timezone.utc)
+
+            if response:
+                # Pattern exists - increment occurrence count
+                existing = response[0]
+                new_count = existing["occurrence_count"] + 1
+                # Increase confidence with occurrences (cap at 1.0)
+                new_confidence = min(1.0, 0.5 + (new_count * 0.1))
+
+                await asyncio.to_thread(
+                    self._update_pattern_sync,
+                    existing["pattern_id"],
+                    {
+                        "occurrence_count": new_count,
+                        "confidence_score": new_confidence,
+                        "last_seen_at": now.isoformat(),
+                    },
+                )
+            else:
+                # New pattern - insert
+                await asyncio.to_thread(
+                    self._insert_pattern_sync,
+                    {
+                        "user_id": str(user_id),
+                        "label_type": label_type,
+                        "pattern_type": pattern_type,
+                        "pattern_value": pattern_value,
+                        "confidence_score": 0.5,  # Initial confidence
+                        "occurrence_count": 1,
+                        "last_seen_at": now.isoformat(),
+                        "is_user_defined": False,
+                    },
+                )
+
+        except Exception as e:
+            logger.error(f"Error upserting label pattern: {e}")
+            raise
+
+    def _query_pattern_sync(
+        self,
+        user_id: UUID,
+        label_type: str,
+        pattern_type: str,
+        pattern_value: str,
+    ) -> list[dict]:
+        """Sync method to query for existing pattern."""
+        response = (
+            self.client.table("label_patterns")
+            .select("*")
+            .eq("user_id", str(user_id))
+            .eq("label_type", label_type)
+            .eq("pattern_type", pattern_type)
+            .eq("pattern_value", pattern_value)
+            .execute()
+        )
+        return response.data or []
+
+    def _update_pattern_sync(self, pattern_id: str, updates: dict) -> None:
+        """Sync method to update a pattern."""
+        self.client.table("label_patterns").update(updates).eq(
+            "pattern_id", pattern_id
+        ).execute()
+
+    def _insert_pattern_sync(self, payload: dict) -> None:
+        """Sync method to insert a new pattern."""
+        self.client.table("label_patterns").insert(payload).execute()
+
+    async def get_label_patterns(
+        self,
+        user_id: UUID,
+        label_type: Optional[str] = None,
+        pattern_type: Optional[str] = None,
+        min_confidence: float = 0.3,
+    ) -> list[dict]:
+        """
+        Retrieve label patterns for a user with optional filters.
+
+        Args:
+            user_id: User ID
+            label_type: Optional filter for "Important" or "Not Important"
+            pattern_type: Optional filter for "domain" or "keyword"
+            min_confidence: Minimum confidence score (default 0.3)
+
+        Returns:
+            List of pattern dictionaries
+        """
+        try:
+            return await asyncio.to_thread(
+                self._get_patterns_sync, user_id, label_type, pattern_type, min_confidence
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving label patterns: {e}")
+            raise
+
+    def _get_patterns_sync(
+        self,
+        user_id: UUID,
+        label_type: Optional[str],
+        pattern_type: Optional[str],
+        min_confidence: float,
+    ) -> list[dict]:
+        """Sync method to get label patterns."""
+        query = (
+            self.client.table("label_patterns")
+            .select("*")
+            .eq("user_id", str(user_id))
+            .gte("confidence_score", min_confidence)
+            .order("confidence_score", desc=True)
+        )
+
+        if label_type:
+            query = query.eq("label_type", label_type)
+        if pattern_type:
+            query = query.eq("pattern_type", pattern_type)
+
+        response = query.execute()
+        return response.data or []
+
+    async def create_user_defined_pattern(
+        self,
+        user_id: UUID,
+        label_type: str,
+        pattern_type: str,
+        pattern_value: str,
+    ) -> UUID:
+        """
+        Create a user-defined pattern.
+
+        Args:
+            user_id: User ID
+            label_type: "Important" or "Not Important"
+            pattern_type: "domain" or "keyword"
+            pattern_value: Pattern value
+
+        Returns:
+            UUID of created pattern
+        """
+        try:
+            pattern_id = await asyncio.to_thread(
+                self._create_user_pattern_sync,
+                user_id,
+                label_type,
+                pattern_type,
+                pattern_value,
+            )
+            return UUID(pattern_id)
+        except Exception as e:
+            logger.error(f"Error creating user-defined pattern: {e}")
+            raise
+
+    def _create_user_pattern_sync(
+        self, user_id: UUID, label_type: str, pattern_type: str, pattern_value: str
+    ) -> str:
+        """Sync method to create user-defined pattern."""
+        response = (
+            self.client.table("label_patterns")
+            .insert(
+                {
+                    "user_id": str(user_id),
+                    "label_type": label_type,
+                    "pattern_type": pattern_type,
+                    "pattern_value": pattern_value.strip().lower(),
+                    "confidence_score": 1.0,  # User-defined = high confidence
+                    "occurrence_count": 1,
+                    "is_user_defined": True,
+                }
+            )
+            .execute()
+        )
+        return response.data[0]["pattern_id"]
+
+    async def update_label_pattern(self, pattern_id: UUID, updates: dict) -> None:
+        """
+        Update a label pattern.
+
+        Args:
+            pattern_id: Pattern ID
+            updates: Dictionary of fields to update
+        """
+        try:
+            await asyncio.to_thread(self._update_pattern_sync, str(pattern_id), updates)
+        except Exception as e:
+            logger.error(f"Error updating label pattern: {e}")
+            raise
+
+    async def delete_label_pattern(self, pattern_id: UUID) -> None:
+        """
+        Delete a label pattern.
+
+        Args:
+            pattern_id: Pattern ID
+        """
+        try:
+            await asyncio.to_thread(self._delete_pattern_sync, str(pattern_id))
+        except Exception as e:
+            logger.error(f"Error deleting label pattern: {e}")
+            raise
+
+    def _delete_pattern_sync(self, pattern_id: str) -> None:
+        """Sync method to delete a pattern."""
+        self.client.table("label_patterns").delete().eq(
+            "pattern_id", pattern_id
+        ).execute()
+
+    async def update_email_label(
+        self,
+        email_id: UUID,
+        applied_label: str,
+        sender_domain: Optional[str] = None,
+    ) -> None:
+        """
+        Update email with applied label and metadata.
+
+        Args:
+            email_id: Email ID
+            applied_label: Label applied ("Important" or "Not Important")
+            sender_domain: Extracted sender domain
+        """
+        try:
+            updates = {
+                "applied_label": applied_label,
+                "label_applied_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            if sender_domain:
+                updates["sender_domain"] = sender_domain
+
+            await asyncio.to_thread(self._update_email_label_sync, str(email_id), updates)
+        except Exception as e:
+            logger.error(f"Error updating email label: {e}")
+            raise
+
+    def _update_email_label_sync(self, email_id: str, updates: dict) -> None:
+        """Sync method to update email label."""
+        self.client.table("emails").update(updates).eq("id", email_id).execute()
+
     async def _execute(self, table: str, operation: str, payload: Any) -> None:
         logger.debug("Supabase {} on {} payload={}", operation, table, payload)
         await asyncio.to_thread(self._execute_sync, table, operation, payload)

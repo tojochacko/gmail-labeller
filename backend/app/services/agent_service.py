@@ -10,6 +10,7 @@ import logging
 
 from ..config import Settings
 from ..schemas.agent import AgentRunRequest, AgentRunResponse, AgentRunStatusResponse
+from .pattern_learning_service import PatternLearningService
 from .supabase_service import SupabaseService
 
 
@@ -19,9 +20,15 @@ logger = logging.getLogger(__name__)
 class AgentService:
     """Trigger and monitor agent runs via the existing runtime API."""
 
-    def __init__(self, settings: Settings, supabase: SupabaseService) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        supabase: SupabaseService,
+        pattern_service: PatternLearningService | None = None,
+    ) -> None:
         self._settings = settings
         self._supabase = supabase
+        self._pattern_service = pattern_service or PatternLearningService(supabase)
         self._mock_runs: dict[UUID, dict] = {}
 
     def _is_mock_mode(self) -> bool:
@@ -108,13 +115,43 @@ class AgentService:
         return cached
 
     async def trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
+        # Fetch learned patterns for this user and inject into prompt
+        learned_context = await self._pattern_service.get_learned_context(
+            user_id=request.user_id
+        )
+        context_text = learned_context.format_for_prompt()
+
+        # Enhance prompt with learned context
+        enhanced_prompt = request.prompt or ""
+        if context_text:
+            enhanced_prompt = f"{enhanced_prompt}\n{context_text}"
+            logger.info(
+                f"Injected learned context for user {request.user_id}: "
+                f"{len(learned_context.important_domains)} important domains, "
+                f"{len(learned_context.important_keywords)} important keywords"
+            )
+
+        # Create enhanced request with learned context
+        enhanced_request = AgentRunRequest(
+            user_id=request.user_id,
+            email_id=request.email_id,
+            gmail_message_id=request.gmail_message_id,
+            prompt=enhanced_prompt,
+        )
+
         # Use mock mode if agent runtime is not configured
         if self._is_mock_mode():
-            return await self._mock_trigger_agent_run(request)
+            return await self._mock_trigger_agent_run(enhanced_request)
 
-        payload = request.model_dump()
-        logger.info("Triggering agent run for email %s user %s", request.email_id, request.user_id)
-        async with httpx.AsyncClient(base_url=str(self._settings.agent_runtime_base_url)) as client:
+        payload = enhanced_request.model_dump()
+        logger.info(
+            "Triggering agent run for email %s user %s",
+            request.email_id,
+            request.user_id,
+        )
+        async with httpx.AsyncClient(
+            base_url=str(self._settings.agent_runtime_base_url)
+        ) as client:
             response = await client.post("/runs", json=payload, timeout=30)
             response.raise_for_status()
             data = response.json()

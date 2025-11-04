@@ -15,6 +15,9 @@ class EmailItem(BaseModel):
     thread_id: str = Field(..., description="Gmail thread identifier.")
     subject: str = Field(..., description="Email subject line.")
     snippet: Optional[str] = Field(default=None, description="Trimmed preview of the body.")
+    sender_email: Optional[str] = Field(
+        default=None, description="Email address of the sender."
+    )
     received_at: datetime = Field(..., description="Timestamp from Gmail.")
     processed_at: Optional[datetime] = Field(
         default=None, description="Timestamp of the last agent processing run."

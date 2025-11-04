@@ -11,6 +11,7 @@ from .services import (
     GmailService,
     GmailToolkitFactory,
     LabelService,
+    PatternLearningService,
     SupabaseService,
 )
 
@@ -52,3 +53,9 @@ def get_agent_service(
     supabase: SupabaseService = Depends(get_supabase_service),
 ) -> AgentService:
     return AgentService(settings, supabase)
+
+
+def get_pattern_service(
+    supabase: SupabaseService = Depends(get_supabase_service),
+) -> PatternLearningService:
+    return PatternLearningService(supabase)
