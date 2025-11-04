@@ -6,6 +6,7 @@ import type {
   OAuthCompletionPayload,
   OAuthStatusResponse,
 } from './shared/ipc'
+import { PatternViewer } from './components/PatternViewer'
 
 import './App.css'
 
@@ -317,7 +318,7 @@ function App() {
             {unanalyzedEmails.length > 0 && (
               <section className='card'>
                 <h2>📧 Unanalyzed Emails ({unanalyzedEmails.length})</h2>
-                <p className='hint'>Click "Trigger agent" to get AI classification</p>
+                <p className='hint'>Click &quot;Trigger agent&quot; to get AI classification</p>
                 <ul className='email-list'>
                   {unanalyzedEmails.map((email) => (
                     <li key={email.id} className='email-item'>
@@ -340,6 +341,12 @@ function App() {
           </>
         )
       })()}
+
+      {isConnected && session && (
+        <section className='card'>
+          <PatternViewer userId={session.userId} />
+        </section>
+      )}
 
       <footer className='footer'>
         <p>

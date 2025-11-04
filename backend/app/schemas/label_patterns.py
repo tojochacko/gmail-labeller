@@ -13,12 +13,8 @@ class LabelPatternBase(BaseModel):
     label_type: Literal["Important", "Not Important"] = Field(
         ..., description="Category this pattern belongs to"
     )
-    pattern_type: Literal["domain", "keyword"] = Field(
-        ..., description="Type of pattern"
-    )
-    pattern_value: str = Field(
-        ..., min_length=1, max_length=500, description="The pattern value"
-    )
+    pattern_type: Literal["domain", "keyword"] = Field(..., description="Type of pattern")
+    pattern_value: str = Field(..., min_length=1, max_length=500, description="The pattern value")
     confidence_score: float = Field(
         default=1.0, ge=0.0, le=1.0, description="Confidence score 0.0-1.0"
     )
@@ -81,28 +77,19 @@ class LearnedContext(BaseModel):
         parts = []
 
         if self.important_domains:
-            parts.append(
-                f"Important email domains: {', '.join(self.important_domains)}"
-            )
+            parts.append(f"Important email domains: {', '.join(self.important_domains)}")
         if self.important_keywords:
-            parts.append(
-                f"Important keywords: {', '.join(self.important_keywords)}"
-            )
+            parts.append(f"Important keywords: {', '.join(self.important_keywords)}")
         if self.not_important_domains:
-            parts.append(
-                f"Not important email domains: {', '.join(self.not_important_domains)}"
-            )
+            parts.append(f"Not important email domains: {', '.join(self.not_important_domains)}")
         if self.not_important_keywords:
-            parts.append(
-                f"Not important keywords: {', '.join(self.not_important_keywords)}"
-            )
+            parts.append(f"Not important keywords: {', '.join(self.not_important_keywords)}")
 
         if not parts:
             return ""
 
-        return (
-            "\n\nLearned Patterns (from previous labeling):\n"
-            + "\n".join(f"- {part}" for part in parts)
+        return "\n\nLearned Patterns (from previous labeling):\n" + "\n".join(
+            f"- {part}" for part in parts
         )
 
 

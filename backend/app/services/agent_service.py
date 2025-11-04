@@ -42,7 +42,7 @@ class AgentService:
 
         # Alternate between Important and Not Important for demo purposes
         # Use email_id hash to make it deterministic but varied
-        is_important = int(str(request.email_id).split('-')[0], 16) % 2 == 0
+        is_important = int(str(request.email_id).split("-")[0], 16) % 2 == 0
 
         result_payload = {
             "suggestion": "Important" if is_important else "Not Important",
@@ -82,9 +82,7 @@ class AgentService:
         # Update email with agent suggestion
         if result_payload and "suggestion" in result_payload:
             suggestion = result_payload["suggestion"]
-            logger.info(
-                f"Updating email {request.email_id} with suggestion: {suggestion}"
-            )
+            logger.info(f"Updating email {request.email_id} with suggestion: {suggestion}")
             await self._supabase.update_email_suggestion(
                 email_id=request.email_id,
                 agent_suggestion=suggestion,
@@ -116,9 +114,7 @@ class AgentService:
 
     async def trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
         # Fetch learned patterns for this user and inject into prompt
-        learned_context = await self._pattern_service.get_learned_context(
-            user_id=request.user_id
-        )
+        learned_context = await self._pattern_service.get_learned_context(user_id=request.user_id)
         context_text = learned_context.format_for_prompt()
 
         # Enhance prompt with learned context
@@ -149,9 +145,7 @@ class AgentService:
             request.email_id,
             request.user_id,
         )
-        async with httpx.AsyncClient(
-            base_url=str(self._settings.agent_runtime_base_url)
-        ) as client:
+        async with httpx.AsyncClient(base_url=str(self._settings.agent_runtime_base_url)) as client:
             response = await client.post("/runs", json=payload, timeout=30)
             response.raise_for_status()
             data = response.json()

@@ -48,15 +48,11 @@ class EmailService:
             item = self._parse_email(raw)
 
             # Check if email already exists and reuse ID + preserve fields
-            existing = await self._supabase.fetch_email_by_gmail_id(
-                user_id, item.gmail_message_id
-            )
+            existing = await self._supabase.fetch_email_by_gmail_id(user_id, item.gmail_message_id)
             if existing:
                 # Reuse existing ID to ensure upsert updates the same record
                 item.id = existing.id
-                logger.debug(
-                    f"Reusing existing email ID {existing.id} for {item.gmail_message_id}"
-                )
+                logger.debug(f"Reusing existing email ID {existing.id} for {item.gmail_message_id}")
                 # Preserve agent_suggestion if it exists
                 if existing.agent_suggestion:
                     item.agent_suggestion = existing.agent_suggestion
@@ -91,6 +87,7 @@ class EmailService:
             received_at = message.get("received_at") or datetime.now(timezone.utc)
             if isinstance(received_at, str):
                 from email.utils import parsedate_to_datetime
+
                 try:
                     received_at = parsedate_to_datetime(received_at)
                 except (ValueError, TypeError):

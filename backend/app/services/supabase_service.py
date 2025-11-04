@@ -76,7 +76,7 @@ class SupabaseService:
 
     async def upsert_email(self, user_id: UUID, payload: EmailItem) -> None:
         # Use mode='json' to serialize UUIDs and datetimes to JSON-compatible strings
-        record = payload.model_dump(mode='json')
+        record = payload.model_dump(mode="json")
         record["user_id"] = str(user_id)
         await self._execute("emails", "upsert", record)
 
@@ -98,28 +98,20 @@ class SupabaseService:
             snippet=row.get("snippet"),
             received_at=datetime.fromisoformat(row["received_at"]),
             processed_at=(
-                datetime.fromisoformat(row["processed_at"])
-                if row.get("processed_at")
-                else None
+                datetime.fromisoformat(row["processed_at"]) if row.get("processed_at") else None
             ),
             agent_suggestion=row.get("agent_suggestion"),
         )
 
-    async def update_email_suggestion(
-        self, email_id: UUID, agent_suggestion: str
-    ) -> None:
+    async def update_email_suggestion(self, email_id: UUID, agent_suggestion: str) -> None:
         """Update the agent_suggestion field for an email."""
-        await asyncio.to_thread(
-            self._update_email_suggestion_sync, email_id, agent_suggestion
-        )
+        await asyncio.to_thread(self._update_email_suggestion_sync, email_id, agent_suggestion)
 
-    def _update_email_suggestion_sync(
-        self, email_id: UUID, agent_suggestion: str
-    ) -> None:
+    def _update_email_suggestion_sync(self, email_id: UUID, agent_suggestion: str) -> None:
         """Sync method to update email agent_suggestion."""
-        self.client.table("emails").update(
-            {"agent_suggestion": agent_suggestion}
-        ).eq("id", str(email_id)).execute()
+        self.client.table("emails").update({"agent_suggestion": agent_suggestion}).eq(
+            "id", str(email_id)
+        ).execute()
 
     async def record_agent_run(
         self,
@@ -231,9 +223,7 @@ class SupabaseService:
 
     def _update_pattern_sync(self, pattern_id: str, updates: dict) -> None:
         """Sync method to update a pattern."""
-        self.client.table("label_patterns").update(updates).eq(
-            "pattern_id", pattern_id
-        ).execute()
+        self.client.table("label_patterns").update(updates).eq("pattern_id", pattern_id).execute()
 
     def _insert_pattern_sync(self, payload: dict) -> None:
         """Sync method to insert a new pattern."""
@@ -372,9 +362,7 @@ class SupabaseService:
 
     def _delete_pattern_sync(self, pattern_id: str) -> None:
         """Sync method to delete a pattern."""
-        self.client.table("label_patterns").delete().eq(
-            "pattern_id", pattern_id
-        ).execute()
+        self.client.table("label_patterns").delete().eq("pattern_id", pattern_id).execute()
 
     async def update_email_label(
         self,

@@ -73,16 +73,14 @@ class LabelService:
 
             if not email:
                 logger.warning(
-                    f"Email {gmail_message_id} not found in database. "
-                    "Skipping pattern extraction."
+                    f"Email {gmail_message_id} not found in database. Skipping pattern extraction."
                 )
                 return
 
             # Check if sender_email is available
             if not email.sender_email:
                 logger.warning(
-                    f"Sender email not available for email {email.id}. "
-                    "Skipping pattern extraction."
+                    f"Sender email not available for email {email.id}. Skipping pattern extraction."
                 )
                 return
 

@@ -40,4 +40,3 @@ extend-exclude = [".venv", "dist", "build"]
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E203", "E266"]
-fix = true

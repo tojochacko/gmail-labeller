@@ -25,9 +25,7 @@ class ComposioGmailAdapter:
         try:
             from composio import Composio
         except ImportError as exc:  # pragma: no cover
-            raise RuntimeError(
-                "Composio SDK is not installed. Install `composio>=0.8.0`."
-            ) from exc
+            raise RuntimeError("Composio SDK is not installed. Install `composio>=0.8.0`.") from exc
 
         self._client = Composio(api_key=api_key)
         self._auth_config_id = auth_config_id
@@ -103,7 +101,7 @@ class ComposioGmailAdapter:
         try:
             accounts = self._client.connected_accounts.list(user_ids=[user_id])
             logger.debug(f"Connected accounts for user {user_id}: {accounts}")
-            if hasattr(accounts, 'items'):
+            if hasattr(accounts, "items"):
                 logger.debug(f"Number of connected accounts: {len(accounts.items)}")
                 for acc in accounts.items:
                     logger.debug(f"  - Account ID: {acc.id}, Status: {acc.status}")
@@ -162,7 +160,9 @@ class ComposioGmailAdapter:
 
         # data should be a dict with "messages" key (production Composio response)
         if isinstance(data, dict):
-            logger.debug(f"data is dict with keys: {data.keys() if hasattr(data, 'keys') else 'N/A'}")
+            logger.debug(
+                f"data is dict with keys: {data.keys() if hasattr(data, 'keys') else 'N/A'}"
+            )
 
             if "messages" in data:
                 messages = data["messages"]
@@ -277,7 +277,12 @@ class GmailService:
         max_results: int = 20,
         query: str | None = None,
     ) -> list[dict]:
-        logger.debug("Listing Gmail messages for user %s, max_results=%s, query=%s", user_id, max_results, query)
+        logger.debug(
+            "Listing Gmail messages for user %s, max_results=%s, query=%s",
+            user_id,
+            max_results,
+            query,
+        )
         return await self._adapter.list_messages(
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),

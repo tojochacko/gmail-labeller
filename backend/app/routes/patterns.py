@@ -35,9 +35,7 @@ async def extract_patterns(
     This endpoint should be called after a user applies a label to an email.
     It will extract domains and keywords to improve future AI suggestions.
     """
-    patterns_added = await service.extract_and_store_patterns(
-        request=request, user_id=user_id
-    )
+    patterns_added = await service.extract_and_store_patterns(request=request, user_id=user_id)
 
     return {
         "message": "Patterns extracted successfully",

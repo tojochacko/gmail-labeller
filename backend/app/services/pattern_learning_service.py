@@ -169,9 +169,7 @@ class PatternLearningService:
             patterns_added["domains"] = 1
 
         # Extract keywords
-        keywords = self._extract_keywords(
-            request.email_subject, request.email_snippet
-        )
+        keywords = self._extract_keywords(request.email_subject, request.email_snippet)
         for keyword in keywords:
             await self._upsert_pattern(
                 user_id=user_id,
@@ -203,9 +201,7 @@ class PatternLearningService:
             return match.group(1).lower()
         return None
 
-    def _extract_keywords(
-        self, subject: str, snippet: Optional[str] = None
-    ) -> list[str]:
+    def _extract_keywords(self, subject: str, snippet: Optional[str] = None) -> list[str]:
         """
         Extract meaningful keywords from email content.
 
@@ -236,9 +232,7 @@ class PatternLearningService:
 
         # Count frequency and take top N
         word_counts = Counter(filtered_words)
-        top_keywords = [
-            word for word, _ in word_counts.most_common(self.MAX_KEYWORDS_PER_EMAIL)
-        ]
+        top_keywords = [word for word, _ in word_counts.most_common(self.MAX_KEYWORDS_PER_EMAIL)]
 
         return top_keywords
 
@@ -293,9 +287,7 @@ class PatternLearningService:
 
         return context
 
-    async def get_patterns_by_label(
-        self, user_id: UUID, label_type: str
-    ) -> dict[str, list[str]]:
+    async def get_patterns_by_label(self, user_id: UUID, label_type: str) -> dict[str, list[str]]:
         """
         Get patterns grouped by type for a specific label.
 
@@ -306,9 +298,7 @@ class PatternLearningService:
         Returns:
             Dictionary with "domains" and "keywords" lists
         """
-        patterns = await self._supabase.get_label_patterns(
-            user_id=user_id, label_type=label_type
-        )
+        patterns = await self._supabase.get_label_patterns(user_id=user_id, label_type=label_type)
 
         result = {"domains": [], "keywords": []}
 

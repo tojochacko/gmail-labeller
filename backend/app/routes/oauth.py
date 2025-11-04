@@ -34,8 +34,7 @@ async def start_oauth_flow(
     state = secrets.token_urlsafe(16)
     await supabase.upsert_user(payload.user_id, payload.email)
     authorization_url = await gmail_service.create_authorization_url(
-        state=state,
-        user_id=str(payload.user_id)
+        state=state, user_id=str(payload.user_id)
     )
     logger.info("Generated Gmail OAuth URL for user {}", payload.user_id)
     return OAuthStartResponse(authorization_url=authorization_url, state=state)
@@ -69,7 +68,8 @@ async def oauth_callback(
         tokens = GmailTokens(
             access_token=SecretStr(payload.connected_account_id),
             refresh_token=SecretStr("composio_managed"),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=365),  # Long expiry for Composio-managed
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=365),  # Long expiry for Composio-managed
             scope="gmail.modify",
             token_type="Bearer",
         )
