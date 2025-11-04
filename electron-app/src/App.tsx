@@ -23,7 +23,6 @@ function App() {
   const [emails, setEmails] = useState<EmailItem[]>([])
   const [isFetchingEmails, setIsFetchingEmails] = useState(false)
   const [emailsError, setEmailsError] = useState<string>('')
-  const [labelStatuses, setLabelStatuses] = useState<Record<string, string>>({})
   const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({})
 
   const isConnected = connectionState === 'connected'
@@ -163,28 +162,6 @@ function App() {
     void startOAuthFlow(session)
   }, [session, startOAuthFlow])
 
-  const handleApplyLabel = useCallback(
-    async (email: EmailItem) => {
-      if (!session) return
-
-      setLabelStatuses((current) => ({ ...current, [email.id]: 'Applying label…' }))
-      setStatusMessage('')
-
-      try {
-        const response = await api.labels.apply({
-          userId: session.userId,
-          gmailMessageId: email.gmailMessageId,
-          labelName: 'AUTO_LABEL',
-        })
-        setLabelStatuses((current) => ({ ...current, [email.id]: `Applied ${response.appliedLabel}` }))
-      } catch (error) {
-        console.error('Failed to apply label', error)
-        setLabelStatuses((current) => ({ ...current, [email.id]: 'Failed to apply label' }))
-      }
-    },
-    [api, session],
-  )
-
   const handleRunAgent = useCallback(
     async (email: EmailItem) => {
       if (!session) return
@@ -207,12 +184,17 @@ function App() {
             ? 'Run completed'
             : `Run status: ${status.status}`,
         }))
+
+        // Refresh email list to show updated agent suggestions
+        if (status.status === 'completed') {
+          await handleFetchEmails()
+        }
       } catch (error) {
         console.error('Failed to trigger agent run', error)
         setAgentStatuses((current) => ({ ...current, [email.id]: 'Agent run failed' }))
       }
     },
-    [api, session],
+    [api, session, handleFetchEmails],
   )
 
   return (
@@ -271,36 +253,93 @@ function App() {
         </section>
       )}
 
-      {emails.length > 0 && (
-        <section className='card'>
-          <h2>Latest Emails</h2>
-          <ul className='email-list'>
-            {emails.map((email) => (
-              <li key={email.id} className='email-item'>
-                <h3>{email.subject || '(no subject)'}</h3>
-                <p className='email-meta'>Received {new Date(email.receivedAt).toLocaleString()}</p>
-                {email.snippet && <p className='email-snippet'>{email.snippet}</p>}
-                {email.agentSuggestion && (
-                  <p className='email-suggestion'>Agent suggestion: {email.agentSuggestion}</p>
-                )}
-                <div className='email-actions'>
-                  <button type='button' onClick={() => handleApplyLabel(email)}>
-                    Apply Autogen label
-                  </button>
-                  <button type='button' onClick={() => handleRunAgent(email)}>
-                    Trigger agent
-                  </button>
-                </div>
-                {(labelStatuses[email.id] || agentStatuses[email.id]) && (
-                  <p className='email-status'>
-                    {[labelStatuses[email.id], agentStatuses[email.id]].filter(Boolean).join(' • ')}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {emails.length > 0 && (() => {
+        const importantEmails = emails.filter(
+          (email) => email.agentSuggestion?.toLowerCase() === 'important'
+        )
+        const notImportantEmails = emails.filter(
+          (email) => email.agentSuggestion?.toLowerCase() === 'not important'
+        )
+        const unanalyzedEmails = emails.filter((email) => !email.agentSuggestion)
+
+        return (
+          <>
+            {importantEmails.length > 0 && (
+              <section className='card'>
+                <h2>🔴 Important Emails ({importantEmails.length})</h2>
+                <p className='hint'>AI classified these as important</p>
+                <ul className='email-list'>
+                  {importantEmails.map((email) => (
+                    <li key={email.id} className='email-item'>
+                      <h3>{email.subject || '(no subject)'}</h3>
+                      <p className='email-meta'>Received {new Date(email.receivedAt).toLocaleString()}</p>
+                      {email.snippet && <p className='email-snippet'>{email.snippet}</p>}
+                      <p className='email-suggestion'>AI Suggestion: {email.agentSuggestion}</p>
+                      <div className='email-actions'>
+                        <button type='button' onClick={() => handleRunAgent(email)}>
+                          Re-analyze
+                        </button>
+                      </div>
+                      {agentStatuses[email.id] && (
+                        <p className='email-status'>{agentStatuses[email.id]}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {notImportantEmails.length > 0 && (
+              <section className='card'>
+                <h2>⚪ Not Important ({notImportantEmails.length})</h2>
+                <p className='hint'>AI classified these as not important</p>
+                <ul className='email-list'>
+                  {notImportantEmails.map((email) => (
+                    <li key={email.id} className='email-item'>
+                      <h3>{email.subject || '(no subject)'}</h3>
+                      <p className='email-meta'>Received {new Date(email.receivedAt).toLocaleString()}</p>
+                      {email.snippet && <p className='email-snippet'>{email.snippet}</p>}
+                      <p className='email-suggestion'>AI Suggestion: {email.agentSuggestion}</p>
+                      <div className='email-actions'>
+                        <button type='button' onClick={() => handleRunAgent(email)}>
+                          Re-analyze
+                        </button>
+                      </div>
+                      {agentStatuses[email.id] && (
+                        <p className='email-status'>{agentStatuses[email.id]}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {unanalyzedEmails.length > 0 && (
+              <section className='card'>
+                <h2>📧 Unanalyzed Emails ({unanalyzedEmails.length})</h2>
+                <p className='hint'>Click "Trigger agent" to get AI classification</p>
+                <ul className='email-list'>
+                  {unanalyzedEmails.map((email) => (
+                    <li key={email.id} className='email-item'>
+                      <h3>{email.subject || '(no subject)'}</h3>
+                      <p className='email-meta'>Received {new Date(email.receivedAt).toLocaleString()}</p>
+                      {email.snippet && <p className='email-snippet'>{email.snippet}</p>}
+                      <div className='email-actions'>
+                        <button type='button' onClick={() => handleRunAgent(email)}>
+                          Trigger agent
+                        </button>
+                      </div>
+                      {agentStatuses[email.id] && (
+                        <p className='email-status'>{agentStatuses[email.id]}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </>
+        )
+      })()}
 
       <footer className='footer'>
         <p>

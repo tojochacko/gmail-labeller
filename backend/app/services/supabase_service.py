@@ -80,6 +80,47 @@ class SupabaseService:
         record["user_id"] = str(user_id)
         await self._execute("emails", "upsert", record)
 
+    async def fetch_email_by_gmail_id(
+        self, user_id: UUID, gmail_message_id: str
+    ) -> EmailItem | None:
+        """Fetch an email by its Gmail message ID and user ID."""
+        result = await self._query(
+            "emails", {"user_id": str(user_id), "gmail_message_id": gmail_message_id}
+        )
+        if not result:
+            return None
+        row = result[0]
+        return EmailItem(
+            id=UUID(row["id"]),
+            gmail_message_id=row["gmail_message_id"],
+            thread_id=row["thread_id"],
+            subject=row.get("subject"),
+            snippet=row.get("snippet"),
+            received_at=datetime.fromisoformat(row["received_at"]),
+            processed_at=(
+                datetime.fromisoformat(row["processed_at"])
+                if row.get("processed_at")
+                else None
+            ),
+            agent_suggestion=row.get("agent_suggestion"),
+        )
+
+    async def update_email_suggestion(
+        self, email_id: UUID, agent_suggestion: str
+    ) -> None:
+        """Update the agent_suggestion field for an email."""
+        await asyncio.to_thread(
+            self._update_email_suggestion_sync, email_id, agent_suggestion
+        )
+
+    def _update_email_suggestion_sync(
+        self, email_id: UUID, agent_suggestion: str
+    ) -> None:
+        """Sync method to update email agent_suggestion."""
+        self.client.table("emails").update(
+            {"agent_suggestion": agent_suggestion}
+        ).eq("id", str(email_id)).execute()
+
     async def record_agent_run(
         self,
         run_id: UUID,

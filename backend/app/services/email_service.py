@@ -46,6 +46,27 @@ class EmailService:
         items: list[EmailItem] = []
         for raw in messages:
             item = self._parse_email(raw)
+
+            # Check if email already exists and reuse ID + preserve fields
+            existing = await self._supabase.fetch_email_by_gmail_id(
+                user_id, item.gmail_message_id
+            )
+            if existing:
+                # Reuse existing ID to ensure upsert updates the same record
+                item.id = existing.id
+                logger.debug(
+                    f"Reusing existing email ID {existing.id} for {item.gmail_message_id}"
+                )
+                # Preserve agent_suggestion if it exists
+                if existing.agent_suggestion:
+                    item.agent_suggestion = existing.agent_suggestion
+                    logger.info(
+                        f"Preserved agent_suggestion '{existing.agent_suggestion}' "
+                        f"for email {item.id}"
+                    )
+            else:
+                logger.debug(f"New email {item.gmail_message_id}, assigning ID {item.id}")
+
             await self._supabase.upsert_email(user_id, item)
             items.append(item)
 
@@ -59,13 +80,46 @@ class EmailService:
         return tokens
 
     def _parse_email(self, message: dict) -> EmailItem:
-        headers = self._normalize_headers(message.get("payload", {}).get("headers", []))
-        subject = headers.get("subject", "(no subject)")
-        received_at = self._extract_received_at(headers) or datetime.now(timezone.utc)
+        # Log raw message structure for debugging
+        logger.debug(f"Parsing email with keys: {list(message.keys())}")
+
+        # Composio returns simplified format with subject at top level
+        # Check both formats: raw Gmail API vs Composio simplified
+        if "subject" in message:
+            # Composio format: subject at top level
+            subject = message.get("subject", "(no subject)")
+            received_at = message.get("received_at") or datetime.now(timezone.utc)
+            if isinstance(received_at, str):
+                from email.utils import parsedate_to_datetime
+                try:
+                    received_at = parsedate_to_datetime(received_at)
+                except (ValueError, TypeError):
+                    received_at = datetime.now(timezone.utc)
+        else:
+            # Raw Gmail API format: subject in headers
+            headers = self._normalize_headers(message.get("payload", {}).get("headers", []))
+            subject = headers.get("subject", "(no subject)")
+            received_at = self._extract_received_at(headers) or datetime.now(timezone.utc)
+
         email_id = uuid4()
+
+        # Try multiple field names for Gmail message ID
+        gmail_msg_id = (
+            message.get("id")  # Raw Gmail API
+            or message.get("message_id")  # Composio might use this
+            or message.get("messageId")  # camelCase variant
+            or str(email_id)  # Fallback to UUID
+        )
+
+        if gmail_msg_id == str(email_id):
+            logger.warning(
+                f"Gmail message ID not found in message! Keys: {list(message.keys())}. "
+                f"Using UUID fallback: {email_id}"
+            )
+
         return EmailItem(
             id=email_id,
-            gmail_message_id=message.get("id", str(email_id)),
+            gmail_message_id=gmail_msg_id,
             thread_id=message.get("threadId", message.get("thread_id", "")),
             subject=subject,
             snippet=message.get("snippet"),

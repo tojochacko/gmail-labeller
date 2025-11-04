@@ -32,10 +32,19 @@ class AgentService:
         """Mock agent run for development/testing without external runtime."""
         run_id = uuid4()
         status = "completed"
+
+        # Alternate between Important and Not Important for demo purposes
+        # Use email_id hash to make it deterministic but varied
+        is_important = int(str(request.email_id).split('-')[0], 16) % 2 == 0
+
         result_payload = {
-            "suggestion": "Important",
-            "confidence": 0.9,
-            "reasoning": "Mock agent response - configure AGENT_RUNTIME_BASE_URL for real AI",
+            "suggestion": "Important" if is_important else "Not Important",
+            "confidence": 0.9 if is_important else 0.85,
+            "reasoning": (
+                "Mock: High priority detected"
+                if is_important
+                else "Mock: Low priority, can be archived"
+            ),
         }
 
         logger.warning(
@@ -62,6 +71,22 @@ class AgentService:
             status=status,
             result_payload=result_payload,
         )
+
+        # Update email with agent suggestion
+        if result_payload and "suggestion" in result_payload:
+            suggestion = result_payload["suggestion"]
+            logger.info(
+                f"Updating email {request.email_id} with suggestion: {suggestion}"
+            )
+            await self._supabase.update_email_suggestion(
+                email_id=request.email_id,
+                agent_suggestion=suggestion,
+            )
+            logger.info(f"Successfully updated email {request.email_id} with suggestion")
+        else:
+            logger.warning(
+                f"No suggestion in result_payload for email {request.email_id}: {result_payload}"
+            )
 
         return AgentRunResponse(run_id=run_id, status=status)
 
@@ -96,13 +121,23 @@ class AgentService:
 
         run_id = UUID(data["run_id"])
         status = data.get("status", "queued")
+        result_payload = data.get("result_payload")
+
         await self._supabase.record_agent_run(
             run_id=run_id,
             user_id=request.user_id,
             email_id=request.email_id,
             status=status,
-            result_payload=data.get("result_payload"),
+            result_payload=result_payload,
         )
+
+        # Update email with agent suggestion if available
+        if result_payload and "suggestion" in result_payload:
+            await self._supabase.update_email_suggestion(
+                email_id=request.email_id,
+                agent_suggestion=result_payload["suggestion"],
+            )
+
         return AgentRunResponse(run_id=run_id, status=status)
 
     async def get_agent_run(self, run_id: UUID) -> AgentRunStatusResponse | None:

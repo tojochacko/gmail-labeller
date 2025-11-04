@@ -169,6 +169,8 @@ class ComposioGmailAdapter:
                 logger.info(f"✅ Found {len(messages)} messages in data['messages']")
                 if messages and len(messages) > 0:
                     logger.debug(f"First message subject: {messages[0].get('subject', 'N/A')}")
+                    logger.debug(f"First message keys: {list(messages[0].keys())}")
+                    logger.debug(f"First message sample: {messages[0]}")
                 return messages if isinstance(messages, list) else [messages]
             else:
                 logger.warning(f"data dict has no 'messages' key. Keys: {list(data.keys())}")
