@@ -81,6 +81,8 @@ function ensureOAuthServer() {
 async function createWindow() {
   win = new BrowserWindow({
     title: 'Main window',
+    width: 1040,
+    height: 780,
     icon: path.join(process.env.VITE_PUBLIC, 'favicon.ico'),
     webPreferences: {
       preload,
