@@ -75,7 +75,8 @@ class SupabaseService:
         )
 
     async def upsert_email(self, user_id: UUID, payload: EmailItem) -> None:
-        record = payload.model_dump()
+        # Use mode='json' to serialize UUIDs and datetimes to JSON-compatible strings
+        record = payload.model_dump(mode='json')
         record["user_id"] = str(user_id)
         await self._execute("emails", "upsert", record)
 

@@ -137,22 +137,49 @@ class ComposioGmailAdapter:
 
         # Debug: Log the raw result
         logger.debug(f"GMAIL_FETCH_EMAILS result type: {type(result)}")
-        logger.debug(f"GMAIL_FETCH_EMAILS result: {result}")
 
-        ##Bug: result is a dict type not an object
+        # Handle both object (from mock/SDK) and dict (from actual Composio response)
+        # Try object attribute access first (.data)
         if hasattr(result, "data"):
-            logger.debug(f"Result has data attribute, type: {type(result.data)}, value: {result.data}")
+            logger.debug("Result has .data attribute (object type)")
+            data = result.data
+        # Try dict key access (["data"])
+        elif isinstance(result, dict) and "data" in result:
+            logger.debug("Result has ['data'] key (dict type)")
+            data = result["data"]
         else:
-            logger.debug("Result does not have data attribute")
-            logger.debug(f"Result attributes: {dir(result)}")
+            logger.error(f"Result has no .data attribute or ['data'] key. Type: {type(result)}")
+            if isinstance(result, dict):
+                logger.debug(f"Available keys: {list(result.keys())}")
+            return []
 
-        # Parse and return messages
-        if hasattr(result, "data") and result.data:
-            messages = result.data if isinstance(result.data, list) else [result.data]
-            logger.info(f"Returning {len(messages)} messages from Composio")
-            return messages
+        logger.debug(f"data type: {type(data)}")
 
-        logger.warning("No messages returned from Composio")
+        # Handle None case
+        if data is None:
+            logger.warning("data is None")
+            return []
+
+        # data should be a dict with "messages" key (production Composio response)
+        if isinstance(data, dict):
+            logger.debug(f"data is dict with keys: {data.keys() if hasattr(data, 'keys') else 'N/A'}")
+
+            if "messages" in data:
+                messages = data["messages"]
+                logger.info(f"✅ Found {len(messages)} messages in data['messages']")
+                if messages and len(messages) > 0:
+                    logger.debug(f"First message subject: {messages[0].get('subject', 'N/A')}")
+                return messages if isinstance(messages, list) else [messages]
+            else:
+                logger.warning(f"data dict has no 'messages' key. Keys: {list(data.keys())}")
+                return []
+
+        # Fallback: data is a list directly (some SDK versions)
+        if isinstance(data, list):
+            logger.info(f"✅ Returning {len(data)} messages (data is direct list)")
+            return data
+
+        logger.warning(f"Unexpected data type: {type(data)}")
         return []
 
     async def apply_label(
