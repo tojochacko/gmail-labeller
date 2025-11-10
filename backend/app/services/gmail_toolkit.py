@@ -184,10 +184,200 @@ class ComposioGmailAdapter:
         logger.warning(f"Unexpected data type: {type(data)}")
         return []
 
+    async def get_message(
+        self,
+        message_id: str,
+        access_token: str,
+        refresh_token: str,
+        user_id: str | None = None,
+    ) -> dict | None:
+        """Get a single Gmail message by ID.
+
+        Args:
+            message_id: Gmail message ID to fetch
+            access_token: Connection ID from Composio (stored as access_token)
+            refresh_token: Not used (Composio uses connection internally)
+            user_id: User's UUID (used as user_id in Composio)
+
+        Returns:
+            Message dictionary or None if not found
+        """
+        logger.debug(f"Fetching single message {message_id} for user_id: {user_id}")
+
+        arguments = {
+            "message_id": message_id,
+        }
+
+        try:
+            result = self._client.tools.execute(
+                slug="GMAIL_FETCH_EMAIL",
+                arguments=arguments,
+                user_id=user_id,
+            )
+
+            # Handle both object and dict responses
+            if hasattr(result, "data"):
+                data = result.data
+            elif isinstance(result, dict) and "data" in result:
+                data = result["data"]
+            else:
+                logger.error(f"Unexpected result format: {type(result)}")
+                return None
+
+            if data and isinstance(data, dict):
+                logger.info(f"✅ Fetched message {message_id}")
+                return data
+            else:
+                logger.warning(f"Message {message_id} not found or invalid format")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error fetching message {message_id}: {e}")
+            return None
+
+    async def list_labels(
+        self,
+        access_token: str,
+        refresh_token: str,
+        user_id: str | None = None,
+    ) -> list[dict]:
+        """List all Gmail labels for the user.
+
+        Args:
+            access_token: Connection ID from Composio (stored as access_token)
+            refresh_token: Not used (Composio uses connection internally)
+            user_id: User's UUID (used as user_id in Composio)
+
+        Returns:
+            List of label dictionaries with 'id' and 'name' fields
+        """
+        logger.debug(f"Listing labels for user_id: {user_id}")
+
+        result = self._client.tools.execute(
+            slug="GMAIL_LIST_LABELS",
+            arguments={},
+            user_id=user_id,
+        )
+
+        # Handle both object (from mock/SDK) and dict (from actual Composio response)
+        if hasattr(result, "data"):
+            data = result.data
+        elif isinstance(result, dict) and "data" in result:
+            data = result["data"]
+        else:
+            logger.error(f"Unexpected result format: {type(result)}")
+            return []
+
+        # Extract labels array
+        if isinstance(data, dict) and "labels" in data:
+            labels = data["labels"]
+            logger.info(f"Found {len(labels)} labels")
+            return labels if isinstance(labels, list) else [labels]
+        elif isinstance(data, list):
+            logger.info(f"Found {len(data)} labels (direct list)")
+            return data
+
+        logger.warning(f"No labels found in response. Data type: {type(data)}")
+        return []
+
+    async def create_label(
+        self,
+        label_name: str,
+        access_token: str,
+        refresh_token: str,
+        user_id: str | None = None,
+    ) -> str:
+        """Create a new Gmail label.
+
+        Args:
+            label_name: Name of the label to create
+            access_token: Connection ID from Composio (stored as access_token)
+            refresh_token: Not used (Composio uses connection internally)
+            user_id: User's UUID (used as user_id in Composio)
+
+        Returns:
+            Created label ID
+
+        Raises:
+            RuntimeError: If label creation fails
+        """
+        logger.debug(f"Creating label '{label_name}' for user_id: {user_id}")
+
+        arguments = {
+            "label_name": label_name,
+            "message_list_visibility": "show",
+            "label_list_visibility": "labelShow",
+        }
+
+        result = self._client.tools.execute(
+            slug="GMAIL_CREATE_LABEL",
+            arguments=arguments,
+            user_id=user_id,
+        )
+
+        # Handle both object and dict responses
+        if hasattr(result, "data"):
+            data = result.data
+        elif isinstance(result, dict) and "data" in result:
+            data = result["data"]
+        else:
+            raise RuntimeError(f"Failed to create label: unexpected result format {type(result)}")
+
+        # Extract label ID from response
+        if isinstance(data, dict) and "id" in data:
+            label_id = data["id"]
+            logger.info(f"✅ Created label '{label_name}' with ID: {label_id}")
+            return label_id
+        else:
+            raise RuntimeError(f"Failed to create label '{label_name}': no ID in response")
+
+    async def get_or_create_label(
+        self,
+        label_name: str,
+        access_token: str,
+        refresh_token: str,
+        user_id: str | None = None,
+    ) -> str:
+        """Get existing label ID by name, or create it if it doesn't exist.
+
+        Args:
+            label_name: Name of the label to get or create
+            access_token: Connection ID from Composio (stored as access_token)
+            refresh_token: Not used (Composio uses connection internally)
+            user_id: User's UUID (used as user_id in Composio)
+
+        Returns:
+            Label ID (existing or newly created)
+        """
+        logger.debug(f"Getting or creating label '{label_name}' for user_id: {user_id}")
+
+        # First, try to find existing label
+        labels = await self.list_labels(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_id=user_id,
+        )
+
+        # Search for label by name (case-insensitive)
+        for label in labels:
+            if isinstance(label, dict) and label.get("name", "").lower() == label_name.lower():
+                label_id = label.get("id")
+                logger.info(f"✅ Found existing label '{label_name}' with ID: {label_id}")
+                return label_id
+
+        # Label doesn't exist, create it
+        logger.info(f"Label '{label_name}' not found, creating new one")
+        return await self.create_label(
+            label_name=label_name,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_id=user_id,
+        )
+
     async def apply_label(
         self,
         message_id: str,
-        label_id: str,
+        label_name: str,
         access_token: str,
         refresh_token: str,
         user_id: str | None = None,
@@ -196,18 +386,71 @@ class ComposioGmailAdapter:
 
         Args:
             message_id: Gmail message ID
-            label_id: Gmail label ID to apply
+            label_name: Label name to apply (e.g., "Important", "Not Important")
             access_token: Connection ID from Composio (stored as access_token)
             refresh_token: Not used (Composio uses connection internally)
             user_id: User's UUID (used as user_id in Composio)
         """
-        # Use user_id to let Composio automatically find the connected account
-        # This avoids entity_id mismatch errors
-        self._client.tools.execute(
-            slug="GMAIL_ADD_LABEL",
-            arguments={"message_id": message_id, "label_ids": [label_id]},
-            user_id=user_id,  # Composio will look up the connected account for this user
+        # Map to AI-prefixed custom labels
+        label_mapping = {
+            "Important": "AI:Important",
+            "Not Important": "AI:Not Important",
+        }
+        custom_label_name = label_mapping.get(label_name, label_name)
+
+        logger.info(
+            f"Applying label '{custom_label_name}' (from '{label_name}') "
+            f"to message {message_id} for user_id: {user_id}"
         )
+
+        # Get or create the label and retrieve its ID
+        label_id = await self.get_or_create_label(
+            label_name=custom_label_name,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_id=user_id,
+        )
+
+        # Determine opposite label to remove for clean state
+        remove_label_name = None
+        if label_name == "Important":
+            remove_label_name = "AI:Not Important"
+        elif label_name == "Not Important":
+            remove_label_name = "AI:Important"
+
+        # Get opposite label ID if it exists (don't create it)
+        remove_label_ids = []
+        if remove_label_name:
+            labels = await self.list_labels(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                user_id=user_id,
+            )
+            for label in labels:
+                if isinstance(label, dict) and label.get("name") == remove_label_name:
+                    remove_label_ids.append(label["id"])
+                    logger.debug(f"Will remove opposite label '{remove_label_name}' (ID: {label['id']})")
+                    break
+
+        # Build API arguments
+        arguments = {
+            "message_id": message_id,
+            "add_label_ids": [label_id],
+        }
+
+        if remove_label_ids:
+            arguments["remove_label_ids"] = remove_label_ids
+
+        logger.debug(f"Executing GMAIL_ADD_LABEL_TO_EMAIL with arguments: {arguments}")
+
+        # Execute the API call
+        self._client.tools.execute(
+            slug="GMAIL_ADD_LABEL_TO_EMAIL",
+            arguments=arguments,
+            user_id=user_id,
+        )
+
+        logger.info(f"✅ Successfully applied label '{custom_label_name}' to message {message_id}")
 
 
 @dataclass
@@ -298,10 +541,23 @@ class GmailService:
         tokens: GmailTokens,
         user_id: str,
     ) -> None:
+        """Apply a label to a Gmail message.
+
+        Args:
+            message_id: Gmail message ID
+            label_id: Label name to apply (despite the parameter name, this is actually a label name
+                     like "Important" or "Not Important", not an ID)
+            tokens: Gmail OAuth tokens
+            user_id: User's UUID
+
+        Note:
+            The adapter will automatically map label names to "AI:Important" and "AI:Not Important"
+            and resolve them to actual Gmail label IDs.
+        """
         logger.debug("Applying label %s to message %s for user %s", label_id, message_id, user_id)
         await self._adapter.apply_label(
             message_id=message_id,
-            label_id=label_id,
+            label_name=label_id,  # Changed from label_id to label_name for clarity
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
             user_id=user_id,

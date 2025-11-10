@@ -22,6 +22,7 @@ dependencies = [
     "cryptography>=43.0.0",
     "email-validator>=2.3.0",
     "composio-openai>=0.9.1",
+    "pytest>=8.4.2",
 ]
 
 [project.optional-dependencies]
@@ -40,3 +41,7 @@ extend-exclude = [".venv", "dist", "build"]
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E203", "E266"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

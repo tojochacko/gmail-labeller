@@ -75,33 +75,81 @@ class SupabaseService:
         )
 
     async def upsert_email(self, user_id: UUID, payload: EmailItem) -> None:
-        # Use mode='json' to serialize UUIDs and datetimes to JSON-compatible strings
-        record = payload.model_dump(mode="json")
-        record["user_id"] = str(user_id)
-        await self._execute("emails", "upsert", record)
+        """Upsert email to database.
+
+        Args:
+            user_id: User UUID
+            payload: Email item to upsert
+        """
+        logger.debug(
+            f"💾 Upserting email: id={payload.id}, gmail_message_id={payload.gmail_message_id}, "
+            f"subject='{payload.subject}'"
+        )
+
+        try:
+            # Use mode='json' to serialize UUIDs and datetimes to JSON-compatible strings
+            record = payload.model_dump(mode="json")
+            record["user_id"] = str(user_id)
+
+            logger.debug(f"Upsert record keys: {list(record.keys())}")
+
+            await self._execute("emails", "upsert", record)
+
+            logger.info(
+                f"✅ Email upserted successfully: id={payload.id}, gmail_message_id={payload.gmail_message_id}"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"❌ Error upserting email: id={payload.id}, error={str(e)}", exc_info=True
+            )
+            raise
 
     async def fetch_email_by_gmail_id(
         self, user_id: UUID, gmail_message_id: str
     ) -> EmailItem | None:
-        """Fetch an email by its Gmail message ID and user ID."""
-        result = await self._query(
-            "emails", {"user_id": str(user_id), "gmail_message_id": gmail_message_id}
+        """Fetch email by Gmail message ID.
+
+        Args:
+            user_id: User UUID
+            gmail_message_id: Gmail message identifier
+
+        Returns:
+            EmailItem if found, None otherwise
+        """
+        logger.debug(
+            f"🔍 Fetching email from DB: user_id={user_id}, gmail_message_id={gmail_message_id}"
         )
-        if not result:
+
+        try:
+            response = (
+                self.client.table("emails")
+                .select("*")
+                .eq("user_id", str(user_id))
+                .eq("gmail_message_id", gmail_message_id)
+                .execute()
+            )
+
+            logger.debug(f"Supabase query response: data length={len(response.data) if response.data else 0}")
+
+            if response.data:
+                email_data = response.data[0]
+                logger.info(
+                    f"✅ Email found in database: id={email_data.get('id')}, "
+                    f"subject='{email_data.get('subject')}'"
+                )
+                return EmailItem(**email_data)
+            else:
+                logger.debug(f"❌ Email {gmail_message_id} not found in database")
+                return None
+
+        except Exception as e:
+            logger.error(
+                f"❌ Error fetching email from database: gmail_message_id={gmail_message_id}, "
+                f"error={str(e)}",
+                exc_info=True,
+            )
             return None
-        row = result[0]
-        return EmailItem(
-            id=UUID(row["id"]),
-            gmail_message_id=row["gmail_message_id"],
-            thread_id=row["thread_id"],
-            subject=row.get("subject"),
-            snippet=row.get("snippet"),
-            received_at=datetime.fromisoformat(row["received_at"]),
-            processed_at=(
-                datetime.fromisoformat(row["processed_at"]) if row.get("processed_at") else None
-            ),
-            agent_suggestion=row.get("agent_suggestion"),
-        )
 
     async def update_email_suggestion(self, email_id: UUID, agent_suggestion: str) -> None:
         """Update the agent_suggestion field for an email."""
@@ -364,6 +412,213 @@ class SupabaseService:
         """Sync method to delete a pattern."""
         self.client.table("label_patterns").delete().eq("pattern_id", pattern_id).execute()
 
+    # ============================================
+    # NEW: Auto-Labeling Engine Support Methods
+    # ============================================
+
+    async def fetch_label_patterns(self, user_id: UUID) -> list[dict]:
+        """Fetch all label patterns for a user (for auto-labeling).
+
+        Returns raw dictionaries for use in auto-labeling engine.
+
+        Args:
+            user_id: User UUID
+
+        Returns:
+            List of pattern dictionaries with all fields
+        """
+        try:
+            return await asyncio.to_thread(self._fetch_patterns_for_auto_label_sync, str(user_id))
+        except Exception as e:
+            logger.error(f"Error fetching patterns for auto-labeling: {e}")
+            return []
+
+    def _fetch_patterns_for_auto_label_sync(self, user_id: str) -> list[dict]:
+        """Sync method to fetch patterns for auto-labeling."""
+        response = (
+            self.client.table("label_patterns")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("pattern_weight", desc=True)  # Prioritize high-weight patterns
+            .order("confidence_score", desc=True)
+            .execute()
+        )
+
+        if hasattr(response, "data") and response.data:
+            return response.data
+        return []
+
+    async def upsert_pattern(
+        self,
+        user_id: UUID,
+        pattern_type: str,
+        pattern_value: str,
+        label_type: str,
+        weight_multiplier: float = 1.0,
+    ) -> None:
+        """Create or update a pattern with weight multiplier.
+
+        Used by auto-labeling engine when learning from user re-marks.
+
+        Args:
+            user_id: User UUID
+            pattern_type: Type of pattern (domain, keyword, subject)
+            pattern_value: Pattern value (normalized, lowercase)
+            label_type: Label type (Important, Not Important)
+            weight_multiplier: Weight multiplier (e.g., 2.0 for re-marks)
+        """
+        try:
+            await asyncio.to_thread(
+                self._upsert_pattern_with_weight_sync,
+                str(user_id),
+                pattern_type,
+                pattern_value.lower().strip(),
+                label_type,
+                weight_multiplier,
+            )
+        except Exception as e:
+            logger.error(f"Error upserting pattern: {e}")
+            raise
+
+    def _upsert_pattern_with_weight_sync(
+        self,
+        user_id: str,
+        pattern_type: str,
+        pattern_value: str,
+        label_type: str,
+        weight_multiplier: float,
+    ) -> None:
+        """Sync method to upsert pattern with weight multiplier."""
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        # Check if pattern exists
+        response = (
+            self.client.table("label_patterns")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("pattern_type", pattern_type)
+            .eq("pattern_value", pattern_value)
+            .eq("label_type", label_type)
+            .execute()
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        if hasattr(response, "data") and response.data:
+            # Update existing pattern
+            existing = response.data[0]
+            pattern_id = existing["pattern_id"]
+
+            # Increase weight (cap at 5.0)
+            current_weight = existing.get("pattern_weight", 1.0)
+            new_weight = min(current_weight + weight_multiplier - 1.0, 5.0)
+
+            # Increment occurrence count
+            occurrence_count = existing.get("occurrence_count", 0) + 1
+
+            self.client.table("label_patterns").update({
+                "pattern_weight": new_weight,
+                "occurrence_count": occurrence_count,
+                "last_seen_at": now,
+                "updated_at": now,
+            }).eq("pattern_id", pattern_id).execute()
+
+            logger.debug(
+                f"Updated pattern {pattern_id}: weight {current_weight:.1f} → {new_weight:.1f}"
+            )
+        else:
+            # Create new pattern
+            pattern_id = uuid4()
+
+            self.client.table("label_patterns").insert({
+                "pattern_id": str(pattern_id),
+                "user_id": user_id,
+                "label_type": label_type,
+                "pattern_type": pattern_type,
+                "pattern_value": pattern_value,
+                "confidence_score": 0.5,  # Initial confidence
+                "pattern_weight": weight_multiplier,
+                "occurrence_count": 1,
+                "is_user_defined": False,
+                "last_seen_at": now,
+                "times_applied": 0,
+                "times_corrected": 0,
+                "created_at": now,
+                "updated_at": now,
+            }).execute()
+
+            logger.debug(
+                f"Created new pattern: {pattern_type}='{pattern_value}' → {label_type} "
+                f"(weight={weight_multiplier:.1f})"
+            )
+
+    async def increment_pattern_usage(
+        self,
+        pattern_id: UUID,
+        was_corrected: bool = False,
+    ) -> None:
+        """Increment pattern usage statistics.
+
+        Args:
+            pattern_id: Pattern UUID
+            was_corrected: Whether the auto-label was corrected by user (re-marked)
+        """
+        try:
+            await asyncio.to_thread(
+                self._increment_pattern_usage_sync,
+                str(pattern_id),
+                was_corrected,
+            )
+        except Exception as e:
+            logger.error(f"Error incrementing pattern usage: {e}")
+
+    def _increment_pattern_usage_sync(self, pattern_id: str, was_corrected: bool) -> None:
+        """Sync method to increment pattern usage."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Fetch current values
+        response = (
+            self.client.table("label_patterns")
+            .select("times_applied, times_corrected, confidence_score")
+            .eq("pattern_id", pattern_id)
+            .execute()
+        )
+
+        if not (hasattr(response, "data") and response.data):
+            logger.warning(f"Pattern {pattern_id} not found for usage update")
+            return
+
+        current = response.data[0]
+        times_applied = current.get("times_applied", 0) + 1
+        times_corrected = current.get("times_corrected", 0) + (1 if was_corrected else 0)
+
+        # Calculate new confidence score based on success rate
+        # confidence = (times_applied - times_corrected) / times_applied
+        if times_applied > 0:
+            success_rate = (times_applied - times_corrected) / times_applied
+            # Blend with current confidence (70% new, 30% old)
+            old_confidence = current.get("confidence_score", 0.5)
+            new_confidence = (success_rate * 0.7) + (old_confidence * 0.3)
+        else:
+            new_confidence = current.get("confidence_score", 0.5)
+
+        # Update database
+        self.client.table("label_patterns").update({
+            "times_applied": times_applied,
+            "times_corrected": times_corrected,
+            "confidence_score": round(new_confidence, 2),
+            "last_applied_at": now,
+            "updated_at": now,
+        }).eq("pattern_id", pattern_id).execute()
+
+        logger.debug(
+            f"Pattern {pattern_id} usage: applied={times_applied}, "
+            f"corrected={times_corrected}, confidence={new_confidence:.2f}"
+        )
+
     async def update_email_label(
         self,
         email_id: UUID,
@@ -378,7 +633,14 @@ class SupabaseService:
             applied_label: Label applied ("Important" or "Not Important")
             sender_domain: Extracted sender domain
         """
+        logger.info(
+            f"💾 SUPABASE UPDATE START: email_id={email_id}, "
+            f"applied_label={applied_label}, sender_domain={sender_domain}"
+        )
+
         try:
+            from datetime import datetime, timezone
+
             updates = {
                 "applied_label": applied_label,
                 "label_applied_at": datetime.now(timezone.utc).isoformat(),
@@ -387,14 +649,178 @@ class SupabaseService:
             if sender_domain:
                 updates["sender_domain"] = sender_domain
 
+            logger.info(f"🔍 UPDATE PAYLOAD CREATED: {updates}")
+            logger.info(f"🔍 Payload type check: applied_label type={type(updates.get('applied_label'))}, value='{updates.get('applied_label')}'")
+            logger.info(f"🔍 Payload type check: label_applied_at type={type(updates.get('label_applied_at'))}, value='{updates.get('label_applied_at')}'")
+            logger.debug(f"Update payload: {updates}")
+            logger.debug(f"Calling _update_email_label_sync with email_id={str(email_id)}...")
+
             await asyncio.to_thread(self._update_email_label_sync, str(email_id), updates)
+
+            logger.info(
+                f"✅ SUPABASE UPDATE SUCCESS: email_id={email_id}, applied_label={applied_label}"
+            )
+
         except Exception as e:
-            logger.error(f"Error updating email label: {e}")
+            logger.error(
+                f"❌ SUPABASE UPDATE ERROR: email_id={email_id}, error type={type(e).__name__}, "
+                f"error={str(e)}",
+                exc_info=True,
+            )
             raise
 
     def _update_email_label_sync(self, email_id: str, updates: dict) -> None:
         """Sync method to update email label."""
-        self.client.table("emails").update(updates).eq("id", email_id).execute()
+        logger.info(f"🔄 _update_email_label_sync called with:")
+        logger.info(f"   email_id: {email_id} (type: {type(email_id)})")
+        logger.info(f"   updates dict: {updates}")
+        logger.info(f"   updates keys: {list(updates.keys())}")
+        logger.info(f"   updates values: {list(updates.values())}")
+
+        try:
+            # Build the query step by step to see what's happening
+            table = self.client.table("emails")
+            logger.debug(f"✓ Got table reference: {table}")
+            
+            query = table.update(updates)
+            logger.debug(f"✓ Created update query with payload: {updates}")
+            
+            query_with_filter = query.eq("id", email_id)
+            logger.debug(f"✓ Added filter: id = {email_id}")
+            
+            response = query_with_filter.execute()
+            logger.debug(f"✓ Executed query")
+
+            logger.info(f"📊 Raw Supabase response object: {response}")
+            logger.info(f"📊 Response type: {type(response)}")
+            
+            if hasattr(response, '__dict__'):
+                logger.debug(f"📊 Response.__dict__: {response.__dict__}")
+
+            # Check if any rows were actually updated
+            if hasattr(response, "data") and response.data:
+                logger.info(f"✅ Supabase returned {len(response.data)} row(s) in response")
+                logger.info(f"📊 Full response.data: {response.data}")
+                
+                # Verify the actual values in the returned data
+                if response.data and len(response.data) > 0:
+                    returned_row = response.data[0]
+                    logger.info(
+                        f"📋 CRITICAL - Returned row values from Supabase:"
+                    )
+                    logger.info(f"   - applied_label: {returned_row.get('applied_label')} (type: {type(returned_row.get('applied_label'))})")
+                    logger.info(f"   - label_applied_at: {returned_row.get('label_applied_at')} (type: {type(returned_row.get('label_applied_at'))})")
+                    logger.info(f"   - sender_domain: {returned_row.get('sender_domain')} (type: {type(returned_row.get('sender_domain'))})")
+                    logger.info(f"   - updated_at: {returned_row.get('updated_at')}")
+            else:
+                logger.warning(
+                    f"⚠️  Supabase update executed but no rows in response.data. "
+                    f"Email ID {email_id} may not exist in database."
+                )
+                logger.warning(f"response.data = {response.data if hasattr(response, 'data') else 'NO DATA ATTRIBUTE'}")
+
+        except Exception as e:
+            logger.error(
+                f"❌ Supabase update failed: email_id={email_id}, error={str(e)}", exc_info=True
+            )
+            raise
+
+    # ============================================
+    # NEW: Consolidated Schema Update Methods
+    # ============================================
+
+    async def update_email_with_new_schema(
+        self,
+        email_id: UUID,
+        label: str,
+        label_confidence: float,
+        label_source: str,
+        labeled_at: datetime,
+        last_updated_by: str,
+        sender_domain: str | None = None,
+    ) -> None:
+        """Update email with new consolidated label schema.
+
+        Use this method for updating labels with the new schema (post-migration).
+        This updates the consolidated 'label' field and metadata.
+
+        Args:
+            email_id: Email UUID
+            label: Label value ("Important" or "Not Important")
+            label_confidence: Confidence score (0.0-1.0)
+            label_source: Source of label ("auto", "manual", or "agent")
+            labeled_at: Timestamp when label was applied
+            last_updated_by: Who updated the label ("auto", "user", or "agent")
+            sender_domain: Optional sender domain to update
+        """
+        logger.info(
+            f"💾 NEW SCHEMA UPDATE: email_id={email_id}, label={label}, "
+            f"confidence={label_confidence:.2f}, source={label_source}"
+        )
+
+        try:
+            updates = {
+                "label": label,
+                "label_confidence": label_confidence,
+                "label_source": label_source,
+                "labeled_at": labeled_at.isoformat(),
+                "last_updated_by": last_updated_by,
+            }
+
+            if sender_domain:
+                updates["sender_domain"] = sender_domain
+
+            logger.debug(f"Update payload (new schema): {updates}")
+
+            await asyncio.to_thread(
+                self._update_email_new_schema_sync,
+                str(email_id),
+                updates
+            )
+
+            logger.info(
+                f"✅ NEW SCHEMA UPDATE SUCCESS: email {email_id} → {label} "
+                f"({label_source}, {label_confidence:.2f})"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"❌ NEW SCHEMA UPDATE FAILED: email_id={email_id}, error={str(e)}",
+                exc_info=True,
+            )
+            raise
+
+    def _update_email_new_schema_sync(self, email_id: str, updates: dict) -> None:
+        """Sync method to update email with new schema."""
+        logger.debug(f"🔄 Executing new schema update: email_id={email_id}")
+        logger.debug(f"   Updates: {updates}")
+
+        try:
+            response = (
+                self.client.table("emails")
+                .update(updates)
+                .eq("id", email_id)
+                .execute()
+            )
+
+            if hasattr(response, "data") and response.data:
+                logger.debug(f"✅ Updated {len(response.data)} row(s)")
+                if response.data:
+                    returned = response.data[0]
+                    logger.debug(
+                        f"   Returned: label={returned.get('label')}, "
+                        f"confidence={returned.get('label_confidence')}, "
+                        f"source={returned.get('label_source')}"
+                    )
+            else:
+                logger.warning(
+                    f"⚠️  Update executed but no rows returned. "
+                    f"Email {email_id} may not exist."
+                )
+
+        except Exception as e:
+            logger.error(f"❌ New schema update failed: {str(e)}", exc_info=True)
+            raise
 
     async def _execute(self, table: str, operation: str, payload: Any) -> None:
         logger.debug("Supabase {} on {} payload={}", operation, table, payload)

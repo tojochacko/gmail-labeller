@@ -44,7 +44,15 @@ class LabelPatternUpdate(BaseModel):
 
 
 class LabelPattern(LabelPatternBase):
-    """Complete label pattern with database fields."""
+    """Complete label pattern with database fields.
+
+    Schema Migration (2025-11-09):
+    - Added learning tracking fields for auto-labeling system
+    - times_applied: tracks usage count for this pattern
+    - times_corrected: tracks how often user re-marked emails matching this pattern
+    - last_applied_at: last time pattern was used for auto-labeling
+    - pattern_weight: multiplier for pattern importance (2.0 for re-marks, 1.0 default)
+    """
 
     pattern_id: UUID
     user_id: UUID
@@ -53,6 +61,28 @@ class LabelPattern(LabelPatternBase):
     is_user_defined: bool = Field(default=False)
     created_at: datetime
     updated_at: datetime
+
+    # ============================================
+    # NEW: Learning Tracking Fields (Post-Migration)
+    # ============================================
+    times_applied: int = Field(
+        default=0,
+        description="Number of times this pattern was used for auto-labeling"
+    )
+    times_corrected: int = Field(
+        default=0,
+        description="Number of times user corrected this pattern (re-marked)"
+    )
+    last_applied_at: Optional[datetime] = Field(
+        default=None,
+        description="Last time this pattern was used for labeling"
+    )
+    pattern_weight: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=5.0,
+        description="Weight multiplier (1.0 default, 2.0 for re-marks, up to 5.0 max)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

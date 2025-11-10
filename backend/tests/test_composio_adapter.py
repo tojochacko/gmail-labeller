@@ -28,6 +28,10 @@ class MockToolExecutionResponse:
         self.error = None
 
 
+# Alias for backward compatibility
+MockExecuteResult = MockToolExecutionResponse
+
+
 @pytest.fixture
 def mock_composio_client():
     """Create a mock Composio client."""
@@ -153,26 +157,230 @@ async def test_list_messages_with_composio_managed_token(mock_composio_client):
 
 @pytest.mark.asyncio
 async def test_apply_label(mock_composio_client):
-    """Test applying labels to Gmail messages using Composio 1.0 API."""
+    """Test applying labels to Gmail messages - verifies label name resolution to IDs."""
     adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
 
     # Reset mock to clear previous calls
     mock_composio_client.tools.execute.reset_mock()
 
+    # Mock list_labels response - "AI:Important" already exists
+    mock_composio_client.tools.execute.side_effect = [
+        # First call: list_labels (from get_or_create_label)
+        MockExecuteResult(
+            data={
+                "labels": [
+                    {"id": "label-ai-important-123", "name": "AI:Important"},
+                    {"id": "label-ai-not-important-456", "name": "AI:Not Important"},
+                    {"id": "label-inbox", "name": "INBOX"},
+                ]
+            }
+        ),
+        # Second call: list_labels (to find opposite label)
+        MockExecuteResult(
+            data={
+                "labels": [
+                    {"id": "label-ai-important-123", "name": "AI:Important"},
+                    {"id": "label-ai-not-important-456", "name": "AI:Not Important"},
+                    {"id": "label-inbox", "name": "INBOX"},
+                ]
+            }
+        ),
+        # Third call: apply_label (GMAIL_ADD_LABEL_TO_EMAIL)
+        MockExecuteResult(data={"successful": True}),
+    ]
+
     await adapter.apply_label(
         message_id="msg-123",
-        label_id="label-456",
+        label_name="Important",  # Changed from label_id to label_name
         access_token="conn-id-789",
         refresh_token="not-used",
         user_id="user-abc",
     )
 
-    # Verify the correct Composio API was called (only user_id, no connected_account_id)
-    mock_composio_client.tools.execute.assert_called_once_with(
-        slug="GMAIL_ADD_LABEL",
-        arguments={"message_id": "msg-123", "label_ids": ["label-456"]},
-        user_id="user-abc",
+    # Verify three API calls were made
+    assert mock_composio_client.tools.execute.call_count == 3
+
+    # First call: list labels to find existing "AI:Important" label (from get_or_create_label)
+    first_call = mock_composio_client.tools.execute.call_args_list[0]
+    assert first_call[1]["slug"] == "GMAIL_LIST_LABELS"
+    assert first_call[1]["user_id"] == "user-abc"
+
+    # Second call: list labels to find opposite label
+    second_call = mock_composio_client.tools.execute.call_args_list[1]
+    assert second_call[1]["slug"] == "GMAIL_LIST_LABELS"
+    assert second_call[1]["user_id"] == "user-abc"
+
+    # Third call: add label with resolved ID
+    third_call = mock_composio_client.tools.execute.call_args_list[2]
+    assert third_call[1]["slug"] == "GMAIL_ADD_LABEL_TO_EMAIL"
+    assert third_call[1]["arguments"]["message_id"] == "msg-123"
+    assert third_call[1]["arguments"]["add_label_ids"] == ["label-ai-important-123"]
+    # Should try to remove opposite label
+    assert third_call[1]["arguments"]["remove_label_ids"] == ["label-ai-not-important-456"]
+    assert third_call[1]["user_id"] == "user-abc"
+
+
+@pytest.mark.asyncio
+async def test_apply_label_creates_new_label(mock_composio_client):
+    """Test that apply_label creates a new label if it doesn't exist."""
+    adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
+
+    mock_composio_client.tools.execute.reset_mock()
+
+    # Mock responses: label doesn't exist, then create it, then apply it
+    mock_composio_client.tools.execute.side_effect = [
+        # First call: list_labels - "AI:Important" doesn't exist
+        MockExecuteResult(data={"labels": [{"id": "label-inbox", "name": "INBOX"}]}),
+        # Second call: create_label
+        MockExecuteResult(data={"id": "label-new-important-789", "name": "AI:Important"}),
+        # Third call: list_labels again (for finding opposite label to remove)
+        MockExecuteResult(
+            data={
+                "labels": [
+                    {"id": "label-inbox", "name": "INBOX"},
+                    {"id": "label-new-important-789", "name": "AI:Important"},
+                ]
+            }
+        ),
+        # Fourth call: apply_label
+        MockExecuteResult(data={"successful": True}),
+    ]
+
+    await adapter.apply_label(
+        message_id="msg-456",
+        label_name="Important",
+        access_token="conn-id-789",
+        refresh_token="not-used",
+        user_id="user-xyz",
     )
+
+    # Verify create label was called
+    assert mock_composio_client.tools.execute.call_count == 4
+    create_call = mock_composio_client.tools.execute.call_args_list[1]
+    assert create_call[1]["slug"] == "GMAIL_CREATE_LABEL"
+    assert create_call[1]["arguments"]["label_name"] == "AI:Important"
+
+
+@pytest.mark.asyncio
+async def test_list_labels(mock_composio_client):
+    """Test listing Gmail labels."""
+    adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
+
+    mock_composio_client.tools.execute.reset_mock()
+    mock_composio_client.tools.execute.return_value = MockExecuteResult(
+        data={
+            "labels": [
+                {"id": "label-1", "name": "INBOX"},
+                {"id": "label-2", "name": "AI:Important"},
+                {"id": "label-3", "name": "Custom Label"},
+            ]
+        }
+    )
+
+    labels = await adapter.list_labels(
+        access_token="conn-id",
+        refresh_token="not-used",
+        user_id="user-123",
+    )
+
+    assert len(labels) == 3
+    assert labels[0]["name"] == "INBOX"
+    assert labels[1]["name"] == "AI:Important"
+    mock_composio_client.tools.execute.assert_called_once_with(
+        slug="GMAIL_LIST_LABELS",
+        arguments={},
+        user_id="user-123",
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_label(mock_composio_client):
+    """Test creating a new Gmail label."""
+    adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
+
+    mock_composio_client.tools.execute.reset_mock()
+    mock_composio_client.tools.execute.return_value = MockExecuteResult(
+        data={"id": "label-new-123", "name": "AI:Important"}
+    )
+
+    label_id = await adapter.create_label(
+        label_name="AI:Important",
+        access_token="conn-id",
+        refresh_token="not-used",
+        user_id="user-456",
+    )
+
+    assert label_id == "label-new-123"
+    mock_composio_client.tools.execute.assert_called_once_with(
+        slug="GMAIL_CREATE_LABEL",
+        arguments={
+            "label_name": "AI:Important",
+            "message_list_visibility": "show",
+            "label_list_visibility": "labelShow",
+        },
+        user_id="user-456",
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_label_existing(mock_composio_client):
+    """Test get_or_create_label when label already exists."""
+    adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
+
+    mock_composio_client.tools.execute.reset_mock()
+    mock_composio_client.tools.execute.return_value = MockExecuteResult(
+        data={
+            "labels": [
+                {"id": "label-existing-123", "name": "AI:Important"},
+                {"id": "label-inbox", "name": "INBOX"},
+            ]
+        }
+    )
+
+    label_id = await adapter.get_or_create_label(
+        label_name="AI:Important",
+        access_token="conn-id",
+        refresh_token="not-used",
+        user_id="user-789",
+    )
+
+    # Should only call list_labels, not create
+    assert label_id == "label-existing-123"
+    assert mock_composio_client.tools.execute.call_count == 1
+    mock_composio_client.tools.execute.assert_called_with(
+        slug="GMAIL_LIST_LABELS",
+        arguments={},
+        user_id="user-789",
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_label_new(mock_composio_client):
+    """Test get_or_create_label when label doesn't exist and needs to be created."""
+    adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
+
+    mock_composio_client.tools.execute.reset_mock()
+    mock_composio_client.tools.execute.side_effect = [
+        # First call: list_labels - label doesn't exist
+        MockExecuteResult(data={"labels": [{"id": "label-inbox", "name": "INBOX"}]}),
+        # Second call: create_label
+        MockExecuteResult(data={"id": "label-new-456", "name": "AI:Not Important"}),
+    ]
+
+    label_id = await adapter.get_or_create_label(
+        label_name="AI:Not Important",
+        access_token="conn-id",
+        refresh_token="not-used",
+        user_id="user-101",
+    )
+
+    assert label_id == "label-new-456"
+    assert mock_composio_client.tools.execute.call_count == 2
+
+    # Verify create was called
+    create_call = mock_composio_client.tools.execute.call_args_list[1]
+    assert create_call[1]["slug"] == "GMAIL_CREATE_LABEL"
+    assert create_call[1]["arguments"]["label_name"] == "AI:Not Important"
 
 
 @pytest.mark.asyncio

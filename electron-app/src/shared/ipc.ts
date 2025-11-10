@@ -31,13 +31,34 @@ export interface EmailItem {
   threadId: string
   subject: string
   snippet?: string | null
+  senderEmail?: string | null
+  senderDomain?: string | null
   receivedAt: string
   processedAt?: string | null
+  // NEW: Consolidated label fields (post-migration)
+  label?: string | null  // "Important", "Not Important", or null for Uncategorized
+  labelConfidence?: number | null  // 0.0-1.0 confidence score
+  labelSource?: 'auto' | 'manual' | 'agent' | null  // Source of label
+  labeledAt?: string | null  // ISO timestamp when labeled
+  lastUpdatedBy?: 'auto' | 'user' | 'agent' | null  // Last updater
+  // DEPRECATED: Old fields (for backward compatibility)
   agentSuggestion?: string | null
+  appliedLabel?: string | null
+  labelAppliedAt?: string | null
+}
+
+export interface EmailStats {
+  total: number
+  important: number
+  notImportant: number
+  uncategorized: number
+  autoLabeled: number
+  manualLabeled: number
 }
 
 export interface EmailFetchResponse {
   items: EmailItem[]
+  stats: EmailStats
 }
 
 export interface ApplyLabelRequest {
