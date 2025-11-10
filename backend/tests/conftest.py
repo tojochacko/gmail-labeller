@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 from uuid import UUID, uuid4
 
 import sys
@@ -17,18 +16,18 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet  # noqa: E402
 
-from backend.app.config import Settings
-from backend.app.main import create_app
-from backend.app.dependencies import (
+from backend.app.config import Settings  # noqa: E402
+from backend.app.main import create_app  # noqa: E402
+from backend.app.dependencies import (  # noqa: E402
     get_agent_service,
     get_email_service,
     get_gmail_service,
     get_label_service,
     get_supabase_service,
 )
-from backend.app.schemas import (
+from backend.app.schemas import (  # noqa: E402
     AgentRunRequest,
     AgentRunResponse,
     AgentRunStatusResponse,
@@ -37,7 +36,7 @@ from backend.app.schemas import (
     EmailItem,
     GmailTokens,
 )
-from pydantic import SecretStr
+from pydantic import SecretStr  # noqa: E402
 
 
 class FakeSupabaseService:

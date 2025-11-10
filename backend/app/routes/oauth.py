@@ -37,7 +37,8 @@ async def start_oauth_flow(
         state=state, user_id=str(payload.user_id)
     )
     logger.info("Generated Gmail OAuth URL for user {}", payload.user_id)
-    return OAuthStartResponse(authorization_url=authorization_url, state=state)
+    # Pydantic will convert str to AnyHttpUrl during validation
+    return OAuthStartResponse(authorization_url=authorization_url, state=state)  # type: ignore[arg-type]
 
 
 @router.post(
@@ -89,7 +90,10 @@ async def oauth_callback(
     # Neither flow provided valid parameters
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Missing OAuth parameters. Provide either (code, state) or (connected_account_id, status).",
+        detail=(
+            "Missing OAuth parameters. Provide either (code, state) or "
+            "(connected_account_id, status)."
+        ),
     )
 
 

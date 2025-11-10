@@ -300,7 +300,7 @@ class PatternLearningService:
         """
         patterns = await self._supabase.get_label_patterns(user_id=user_id, label_type=label_type)
 
-        result = {"domains": [], "keywords": []}
+        result: dict[str, list[str]] = {"domains": [], "keywords": []}
 
         for pattern in patterns:
             if pattern["pattern_type"] == "domain":

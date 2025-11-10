@@ -18,7 +18,9 @@ def test_oauth_start_returns_authorization_url(client: TestClient) -> None:
     response = client.post("/api/oauth/start", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert "authorization_url" in data and data["authorization_url"].startswith("https://example.com")
+    assert "authorization_url" in data and data["authorization_url"].startswith(
+        "https://example.com"
+    )
     assert "state" in data and len(data["state"]) > 0
 
 

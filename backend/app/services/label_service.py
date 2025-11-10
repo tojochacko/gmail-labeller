@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from typing import cast
 from uuid import UUID
 
 import logging
@@ -147,8 +148,7 @@ class LabelService:
                 )
             except Exception as e:
                 logger.error(
-                    f"❌ DATABASE UPDATE FAILED: email_id={email.id}, error={str(e)}",
-                    exc_info=True
+                    f"❌ DATABASE UPDATE FAILED: email_id={email.id}, error={str(e)}", exc_info=True
                 )
                 # Re-raise to let caller know database update failed
                 raise
@@ -168,13 +168,10 @@ class LabelService:
                         new_label=request.label_name,  # type: ignore
                         user_id=request.user_id,
                     )
-                    logger.info(
-                        f"✅ Re-mark learning complete: patterns updated with 2x weight"
-                    )
+                    logger.info("✅ Re-mark learning complete: patterns updated with 2x weight")
                 except Exception as e:
                     logger.warning(
-                        f"⚠️  Re-mark learning failed (non-fatal): {str(e)}",
-                        exc_info=True
+                        f"⚠️  Re-mark learning failed (non-fatal): {str(e)}", exc_info=True
                     )
             else:
                 # Normal pattern extraction for first-time labels
@@ -183,24 +180,20 @@ class LabelService:
                     await self._extract_patterns_after_labeling(
                         user_id=request.user_id,
                         gmail_message_id=request.gmail_message_id,
-                        applied_label=request.label_name,
+                        applied_label=cast(LabelType, request.label_name),
                     )
                     logger.debug("✅ Pattern extraction completed")
                 except Exception as e:
                     logger.warning(
-                        f"⚠️  Pattern extraction failed (non-fatal): {str(e)}",
-                        exc_info=True
+                        f"⚠️  Pattern extraction failed (non-fatal): {str(e)}", exc_info=True
                     )
         else:
             logger.warning(
                 f"⚠️  Skipping database update - email {request.gmail_message_id} not in database"
             )
 
-        logger.info(
-            f"🏷️  APPLY_LABEL COMPLETE: label={label_id}, is_remark={is_remark}"
-        )
+        logger.info(f"🏷️  APPLY_LABEL COMPLETE: label={label_id}, is_remark={is_remark}")
         return ApplyLabelResponse(success=True, label=label_id)
-
 
     async def _ensure_email_in_database(
         self,
@@ -255,7 +248,10 @@ class LabelService:
             # Find the specific message in the results
             message_data = None
             for msg in messages:
-                if msg.get("id") == gmail_message_id or msg.get("gmail_message_id") == gmail_message_id:
+                if (
+                    msg.get("id") == gmail_message_id
+                    or msg.get("gmail_message_id") == gmail_message_id
+                ):
                     message_data = msg
                     logger.debug(f"✅ Found message {gmail_message_id} in Gmail response")
                     break
@@ -302,7 +298,10 @@ class LabelService:
             # Store in database
             logger.debug(f"Upserting email {email_item.id} to database...")
             await self._supabase.upsert_email(user_id=user_id, payload=email_item)
-            logger.info(f"✅ Successfully stored email {gmail_message_id} in database with id={email_item.id}")
+            logger.info(
+                f"✅ Successfully stored email {gmail_message_id} in database "
+                f"with id={email_item.id}"
+            )
 
             return email_item
 
@@ -314,7 +313,7 @@ class LabelService:
             return None
 
     async def _extract_patterns_after_labeling(
-        self, user_id: UUID, gmail_message_id: str, applied_label: str
+        self, user_id: UUID, gmail_message_id: str, applied_label: LabelType
     ) -> None:
         """
         Extract patterns from labeled email.
@@ -358,6 +357,7 @@ class LabelService:
             # Update email with applied label using new consolidated schema
             domain = self._extract_domain(email.sender_email)
             from datetime import datetime, timezone
+
             await self._supabase.update_email_with_new_schema(
                 email_id=email.id,
                 label=applied_label,

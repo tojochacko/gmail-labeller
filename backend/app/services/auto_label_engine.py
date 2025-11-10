@@ -22,7 +22,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -34,10 +33,10 @@ logger = logging.getLogger(__name__)
 
 # Configuration constants
 CONFIDENCE_THRESHOLD = 0.4  # 40% minimum confidence for auto-labeling
-DOMAIN_WEIGHT = 0.50        # 50% weight for domain matches
-KEYWORD_WEIGHT = 0.30       # 30% weight for keyword matches
-SUBJECT_WEIGHT = 0.20       # 20% weight for subject pattern matches
-REMARK_MULTIPLIER = 2.0     # 2x weight for re-marked patterns
+DOMAIN_WEIGHT = 0.50  # 50% weight for domain matches
+KEYWORD_WEIGHT = 0.30  # 30% weight for keyword matches
+SUBJECT_WEIGHT = 0.20  # 20% weight for subject pattern matches
+REMARK_MULTIPLIER = 2.0  # 2x weight for re-marked patterns
 
 
 @dataclass
@@ -66,7 +65,9 @@ class PatternMatch:
 class AutoLabelEngine:
     """Engine for pattern-based auto-labeling of emails."""
 
-    def __init__(self, supabase: SupabaseService, confidence_threshold: float = CONFIDENCE_THRESHOLD):
+    def __init__(
+        self, supabase: SupabaseService, confidence_threshold: float = CONFIDENCE_THRESHOLD
+    ):
         """Initialize auto-labeling engine.
 
         Args:
@@ -121,6 +122,7 @@ class AutoLabelEngine:
         )
 
         # Determine winning label
+        label: LabelType
         if important_score > not_important_score and important_score >= self._confidence_threshold:
             label = "Important"
             confidence = important_score
@@ -312,16 +314,45 @@ class AutoLabelEngine:
 
         # Filter out common stop words and short words
         stop_words = {
-            "the", "is", "at", "which", "on", "a", "an", "and", "or", "but",
-            "in", "with", "to", "for", "of", "as", "by", "from", "that", "this",
-            "your", "you", "have", "has", "had", "will", "would", "can", "could",
-            "email", "message", "sent", "subject", "please", "thank", "thanks",
+            "the",
+            "is",
+            "at",
+            "which",
+            "on",
+            "a",
+            "an",
+            "and",
+            "or",
+            "but",
+            "in",
+            "with",
+            "to",
+            "for",
+            "of",
+            "as",
+            "by",
+            "from",
+            "that",
+            "this",
+            "your",
+            "you",
+            "have",
+            "has",
+            "had",
+            "will",
+            "would",
+            "can",
+            "could",
+            "email",
+            "message",
+            "sent",
+            "subject",
+            "please",
+            "thank",
+            "thanks",
         }
 
-        keywords = [
-            word for word in words
-            if len(word) >= min_length and word not in stop_words
-        ]
+        keywords = [word for word in words if len(word) >= min_length and word not in stop_words]
 
         return keywords[:10]  # Limit to top 10 keywords
 

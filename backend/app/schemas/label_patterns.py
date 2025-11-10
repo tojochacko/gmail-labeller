@@ -66,22 +66,19 @@ class LabelPattern(LabelPatternBase):
     # NEW: Learning Tracking Fields (Post-Migration)
     # ============================================
     times_applied: int = Field(
-        default=0,
-        description="Number of times this pattern was used for auto-labeling"
+        default=0, description="Number of times this pattern was used for auto-labeling"
     )
     times_corrected: int = Field(
-        default=0,
-        description="Number of times user corrected this pattern (re-marked)"
+        default=0, description="Number of times user corrected this pattern (re-marked)"
     )
     last_applied_at: Optional[datetime] = Field(
-        default=None,
-        description="Last time this pattern was used for labeling"
+        default=None, description="Last time this pattern was used for labeling"
     )
     pattern_weight: float = Field(
         default=1.0,
         ge=0.0,
         le=5.0,
-        description="Weight multiplier (1.0 default, 2.0 for re-marks, up to 5.0 max)"
+        description="Weight multiplier (1.0 default, 2.0 for re-marks, up to 5.0 max)",
     )
 
     model_config = ConfigDict(from_attributes=True)

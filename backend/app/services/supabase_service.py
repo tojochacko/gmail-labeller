@@ -96,7 +96,8 @@ class SupabaseService:
             await self._execute("emails", "upsert", record)
 
             logger.info(
-                f"✅ Email upserted successfully: id={payload.id}, gmail_message_id={payload.gmail_message_id}"
+                f"✅ Email upserted successfully: id={payload.id}, "
+                f"gmail_message_id={payload.gmail_message_id}"
             )
 
         except Exception as e:
@@ -130,7 +131,9 @@ class SupabaseService:
                 .execute()
             )
 
-            logger.debug(f"Supabase query response: data length={len(response.data) if response.data else 0}")
+            logger.debug(
+                f"Supabase query response: data length={len(response.data) if response.data else 0}"
+            )
 
             if response.data:
                 email_data = response.data[0]
@@ -369,7 +372,7 @@ class SupabaseService:
             )
             .execute()
         )
-        return response.data[0]["pattern_id"]
+        return str(response.data[0]["pattern_id"])
 
     async def update_label_pattern(self, pattern_id: UUID, updates: dict) -> None:
         """
@@ -435,7 +438,7 @@ class SupabaseService:
         )
 
         if hasattr(response, "data") and response.data:
-            return response.data
+            return list(response.data)  # Cast to list to satisfy mypy
         return []
 
     async def upsert_pattern(
@@ -507,12 +510,14 @@ class SupabaseService:
             # Increment occurrence count
             occurrence_count = existing.get("occurrence_count", 0) + 1
 
-            self.client.table("label_patterns").update({
-                "pattern_weight": new_weight,
-                "occurrence_count": occurrence_count,
-                "last_seen_at": now,
-                "updated_at": now,
-            }).eq("pattern_id", pattern_id).execute()
+            self.client.table("label_patterns").update(
+                {
+                    "pattern_weight": new_weight,
+                    "occurrence_count": occurrence_count,
+                    "last_seen_at": now,
+                    "updated_at": now,
+                }
+            ).eq("pattern_id", pattern_id).execute()
 
             logger.debug(
                 f"Updated pattern {pattern_id}: weight {current_weight:.1f} → {new_weight:.1f}"
@@ -521,22 +526,24 @@ class SupabaseService:
             # Create new pattern
             pattern_id = uuid4()
 
-            self.client.table("label_patterns").insert({
-                "pattern_id": str(pattern_id),
-                "user_id": user_id,
-                "label_type": label_type,
-                "pattern_type": pattern_type,
-                "pattern_value": pattern_value,
-                "confidence_score": 0.5,  # Initial confidence
-                "pattern_weight": weight_multiplier,
-                "occurrence_count": 1,
-                "is_user_defined": False,
-                "last_seen_at": now,
-                "times_applied": 0,
-                "times_corrected": 0,
-                "created_at": now,
-                "updated_at": now,
-            }).execute()
+            self.client.table("label_patterns").insert(
+                {
+                    "pattern_id": str(pattern_id),
+                    "user_id": user_id,
+                    "label_type": label_type,
+                    "pattern_type": pattern_type,
+                    "pattern_value": pattern_value,
+                    "confidence_score": 0.5,  # Initial confidence
+                    "pattern_weight": weight_multiplier,
+                    "occurrence_count": 1,
+                    "is_user_defined": False,
+                    "last_seen_at": now,
+                    "times_applied": 0,
+                    "times_corrected": 0,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            ).execute()
 
             logger.debug(
                 f"Created new pattern: {pattern_type}='{pattern_value}' → {label_type} "
@@ -596,13 +603,15 @@ class SupabaseService:
             new_confidence = current.get("confidence_score", 0.5)
 
         # Update database
-        self.client.table("label_patterns").update({
-            "times_applied": times_applied,
-            "times_corrected": times_corrected,
-            "confidence_score": round(new_confidence, 2),
-            "last_applied_at": now,
-            "updated_at": now,
-        }).eq("pattern_id", pattern_id).execute()
+        self.client.table("label_patterns").update(
+            {
+                "times_applied": times_applied,
+                "times_corrected": times_corrected,
+                "confidence_score": round(new_confidence, 2),
+                "last_applied_at": now,
+                "updated_at": now,
+            }
+        ).eq("pattern_id", pattern_id).execute()
 
         logger.debug(
             f"Pattern {pattern_id} usage: applied={times_applied}, "
@@ -656,11 +665,7 @@ class SupabaseService:
 
             logger.debug(f"Update payload (new schema): {updates}")
 
-            await asyncio.to_thread(
-                self._update_email_new_schema_sync,
-                str(email_id),
-                updates
-            )
+            await asyncio.to_thread(self._update_email_new_schema_sync, str(email_id), updates)
 
             logger.info(
                 f"✅ NEW SCHEMA UPDATE SUCCESS: email {email_id} → {label} "
@@ -680,12 +685,7 @@ class SupabaseService:
         logger.debug(f"   Updates: {updates}")
 
         try:
-            response = (
-                self.client.table("emails")
-                .update(updates)
-                .eq("id", email_id)
-                .execute()
-            )
+            response = self.client.table("emails").update(updates).eq("id", email_id).execute()
 
             if hasattr(response, "data") and response.data:
                 logger.debug(f"✅ Updated {len(response.data)} row(s)")
@@ -698,8 +698,7 @@ class SupabaseService:
                     )
             else:
                 logger.warning(
-                    f"⚠️  Update executed but no rows returned. "
-                    f"Email {email_id} may not exist."
+                    f"⚠️  Update executed but no rows returned. Email {email_id} may not exist."
                 )
 
         except Exception as e:

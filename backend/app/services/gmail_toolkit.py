@@ -27,7 +27,7 @@ class ComposioGmailAdapter:
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("Composio SDK is not installed. Install `composio>=0.8.0`.") from exc
 
-        self._client = Composio(api_key=api_key)
+        self._client: Composio = Composio(api_key=api_key)
         self._auth_config_id = auth_config_id
 
     async def get_authorization_url(self, redirect_uri: str, state: str, user_id: str) -> str:
@@ -49,7 +49,10 @@ class ComposioGmailAdapter:
             callback_url=redirect_uri,
         )
         logger.debug(f"Connection initiated, redirect_url: {connection_request.redirect_url}")
-        return connection_request.redirect_url
+        redirect_url = connection_request.redirect_url
+        if redirect_url is None:
+            raise RuntimeError("Failed to get redirect URL from Composio")
+        return redirect_url
 
     async def exchange_code_for_tokens(self, code: str, redirect_uri: str) -> dict:
         """Exchange authorization code for access tokens.
@@ -113,7 +116,7 @@ class ComposioGmailAdapter:
         logger.debug(f"Calling GMAIL_FETCH_EMAILS with max_results={max_results}, query={query}")
 
         # Build arguments - try with query parameter
-        arguments = {
+        arguments: dict[str, int | str] = {
             "max_results": max_results,
         }
 
@@ -140,7 +143,7 @@ class ComposioGmailAdapter:
         # Try object attribute access first (.data)
         if hasattr(result, "data"):
             logger.debug("Result has .data attribute (object type)")
-            data = result.data
+            data = result.data  # type: ignore[attr-defined]
         # Try dict key access (["data"])
         elif isinstance(result, dict) and "data" in result:
             logger.debug("Result has ['data'] key (dict type)")
@@ -217,7 +220,7 @@ class ComposioGmailAdapter:
 
             # Handle both object and dict responses
             if hasattr(result, "data"):
-                data = result.data
+                data = result.data  # type: ignore[attr-defined]
             elif isinstance(result, dict) and "data" in result:
                 data = result["data"]
             else:
@@ -226,7 +229,7 @@ class ComposioGmailAdapter:
 
             if data and isinstance(data, dict):
                 logger.info(f"✅ Fetched message {message_id}")
-                return data
+                return dict(data)  # Cast to dict to satisfy mypy
             else:
                 logger.warning(f"Message {message_id} not found or invalid format")
                 return None
@@ -261,7 +264,7 @@ class ComposioGmailAdapter:
 
         # Handle both object (from mock/SDK) and dict (from actual Composio response)
         if hasattr(result, "data"):
-            data = result.data
+            data = result.data  # type: ignore[attr-defined]
         elif isinstance(result, dict) and "data" in result:
             data = result["data"]
         else:
@@ -317,7 +320,7 @@ class ComposioGmailAdapter:
 
         # Handle both object and dict responses
         if hasattr(result, "data"):
-            data = result.data
+            data = result.data  # type: ignore[attr-defined]
         elif isinstance(result, dict) and "data" in result:
             data = result["data"]
         else:
@@ -327,7 +330,7 @@ class ComposioGmailAdapter:
         if isinstance(data, dict) and "id" in data:
             label_id = data["id"]
             logger.info(f"✅ Created label '{label_name}' with ID: {label_id}")
-            return label_id
+            return str(label_id)  # Cast to str to satisfy mypy
         else:
             raise RuntimeError(f"Failed to create label '{label_name}': no ID in response")
 
@@ -363,7 +366,7 @@ class ComposioGmailAdapter:
             if isinstance(label, dict) and label.get("name", "").lower() == label_name.lower():
                 label_id = label.get("id")
                 logger.info(f"✅ Found existing label '{label_name}' with ID: {label_id}")
-                return label_id
+                return str(label_id)  # Cast to str to satisfy mypy
 
         # Label doesn't exist, create it
         logger.info(f"Label '{label_name}' not found, creating new one")
@@ -429,7 +432,9 @@ class ComposioGmailAdapter:
             for label in labels:
                 if isinstance(label, dict) and label.get("name") == remove_label_name:
                     remove_label_ids.append(label["id"])
-                    logger.debug(f"Will remove opposite label '{remove_label_name}' (ID: {label['id']})")
+                    logger.debug(
+                        f"Will remove opposite label '{remove_label_name}' (ID: {label['id']})"
+                    )
                     break
 
         # Build API arguments

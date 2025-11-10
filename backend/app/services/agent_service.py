@@ -85,7 +85,7 @@ class AgentService:
             logger.info(f"Updating email {request.email_id} with suggestion: {suggestion}")
             await self._supabase.update_email_with_new_schema(
                 email_id=request.email_id,
-                label=suggestion,
+                label=str(suggestion),
                 label_confidence=0.5,  # Agent suggestions get medium confidence
                 label_source="agent",
                 labeled_at=datetime.now(timezone.utc),

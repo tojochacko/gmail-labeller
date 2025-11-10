@@ -1,9 +1,6 @@
 """Test script to verify logging is working."""
 
-import asyncio
-from uuid import uuid4
 from backend.app.main import create_app
-from backend.app.services.gmail_toolkit import GmailService
 import logging
 
 # Create app (this will configure logging)

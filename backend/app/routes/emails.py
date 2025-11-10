@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 
 from ..dependencies import get_email_service
-from ..schemas.email import EmailItem, EmailListResponse, EmailListResponseWithStats, EmailStats
+from ..schemas.email import EmailItem, EmailListResponseWithStats, EmailStats
 from ..services.email_service import EmailService
 
 router = APIRouter()
@@ -24,7 +24,10 @@ async def list_emails(
     max_results: int = Query(20, ge=1, le=50),
     query: str | None = Query(
         None,
-        description="Gmail search query (e.g., 'in:inbox', 'is:unread', or empty for all). Defaults to 'in:inbox'",
+        description=(
+            "Gmail search query (e.g., 'in:inbox', 'is:unread', or empty for all). "
+            "Defaults to 'in:inbox'"
+        ),
     ),
     category: Literal["important", "not_important", "uncategorized", "all"] | None = Query(
         None,
@@ -71,10 +74,7 @@ async def list_emails(
             filtered_emails = all_emails
 
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     response_model = EmailListResponseWithStats(
         items=filtered_emails,
@@ -83,7 +83,7 @@ async def list_emails(
 
     # Explicitly serialize with by_alias=True to convert snake_case to camelCase
     return JSONResponse(
-        content=response_model.model_dump(mode='json', by_alias=True),
+        content=response_model.model_dump(mode="json", by_alias=True),
         status_code=status.HTTP_200_OK,
     )
 

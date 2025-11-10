@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import SecretStr
 
 from backend.app.services.gmail_toolkit import ComposioGmailAdapter, GmailService
 from backend.app.schemas.oauth import GmailTokens
@@ -22,7 +20,7 @@ class MockConnectionRequest:
 class MockToolExecutionResponse:
     """Mock for Composio ToolExecutionResponse."""
 
-    def __init__(self, data: list | dict):
+    def __init__(self, data: list | dict | None):
         self.data = data
         self.successful = True
         self.error = None
@@ -138,7 +136,7 @@ async def test_list_messages_with_composio_managed_token(mock_composio_client):
     """Test fetching messages when using Composio-managed tokens."""
     adapter = ComposioGmailAdapter(api_key="test-api-key", auth_config_id="auth-config-123")
 
-    messages = await adapter.list_messages(
+    await adapter.list_messages(
         access_token="composio_managed",
         refresh_token="composio_managed",
         max_results=20,
@@ -387,7 +385,6 @@ async def test_get_or_create_label_new(mock_composio_client):
 async def test_gmail_service_with_adapter(mock_composio_client):
     """Test that GmailService works correctly with the new adapter."""
     from backend.app.config import Settings
-    from pydantic import AnyHttpUrl
 
     settings = Settings.model_validate(
         {

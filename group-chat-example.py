@@ -40,10 +40,8 @@ async def main() -> None:
     class GroupChatMessage(BaseModel):
         body: UserMessage
 
-
     class RequestToSpeak(BaseModel):
         pass
-
 
     class BaseGroupChatAgent(RoutedAgent):
         """A group chat participant using an LLM."""
@@ -71,15 +69,24 @@ async def main() -> None:
             )
 
         @message_handler
-        async def handle_request_to_speak(self, message: RequestToSpeak, ctx: MessageContext) -> None:
+        async def handle_request_to_speak(
+            self, message: RequestToSpeak, ctx: MessageContext
+        ) -> None:
             # print(f"\n{'-'*80}\n{self.id.type}:", flush=True)
             Console().print(Markdown(f"### {self.id.type}: "))
             self._chat_history.append(
-                UserMessage(content=f"Transferred to {self.id.type}, adopt the persona immediately.", source="system")
+                UserMessage(
+                    content=f"Transferred to {self.id.type}, adopt the persona immediately.",
+                    source="system",
+                )
             )
-            completion = await self._model_client.create([self._system_message] + self._chat_history)
+            completion = await self._model_client.create(
+                [self._system_message] + self._chat_history
+            )
             assert isinstance(completion.content, str)
-            self._chat_history.append(AssistantMessage(content=completion.content, source=self.id.type))
+            self._chat_history.append(
+                AssistantMessage(content=completion.content, source=self.id.type)
+            )
             Console().print(Markdown(completion.content))
             # print(completion.content, flush=True)
             await self.publish_message(
@@ -87,9 +94,10 @@ async def main() -> None:
                 topic_id=DefaultTopicId(type=self._group_chat_topic_type),
             )
 
-
     class WriterAgent(BaseGroupChatAgent):
-        def __init__(self, description: str, group_chat_topic_type: str, model_client: ChatCompletionClient) -> None:
+        def __init__(
+            self, description: str, group_chat_topic_type: str, model_client: ChatCompletionClient
+        ) -> None:
             super().__init__(
                 description=description,
                 group_chat_topic_type=group_chat_topic_type,
@@ -97,9 +105,10 @@ async def main() -> None:
                 system_message="You are a Writer. You produce good work.",
             )
 
-
     class EditorAgent(BaseGroupChatAgent):
-        def __init__(self, description: str, group_chat_topic_type: str, model_client: ChatCompletionClient) -> None:
+        def __init__(
+            self, description: str, group_chat_topic_type: str, model_client: ChatCompletionClient
+        ) -> None:
             super().__init__(
                 description=description,
                 group_chat_topic_type=group_chat_topic_type,
@@ -107,7 +116,6 @@ async def main() -> None:
                 system_message="You are an Editor. Plan and guide the task given by the user. Provide critical feedbacks to the draft and illustration produced by Writer and Illustrator. "
                 "Approve if the task is completed and the draft and illustration meets user's requirements.",
             )
-
 
     class IllustratorAgent(BaseGroupChatAgent):
         def __init__(
@@ -126,11 +134,17 @@ async def main() -> None:
             )
             self._image_client = image_client
             self._image_gen_tool = FunctionTool(
-                self._image_gen, name="generate_image", description="Call this to generate an image. "
+                self._image_gen,
+                name="generate_image",
+                description="Call this to generate an image. ",
             )
 
         async def _image_gen(
-            self, character_appearence: str, style_attributes: str, worn_and_carried: str, scenario: str
+            self,
+            character_appearence: str,
+            style_attributes: str,
+            worn_and_carried: str,
+            scenario: str,
         ) -> str:
             prompt = f"Digital painting of a {character_appearence} character with {style_attributes}. Wearing {worn_and_carried}, {scenario}."
             response = await self._image_client.images.generate(
@@ -139,10 +153,15 @@ async def main() -> None:
             return response.data[0].b64_json  # type: ignore
 
         @message_handler
-        async def handle_request_to_speak(self, message: RequestToSpeak, ctx: MessageContext) -> None:  # type: ignore
+        async def handle_request_to_speak(
+            self, message: RequestToSpeak, ctx: MessageContext
+        ) -> None:  # type: ignore
             Console().print(Markdown(f"### {self.id.type}: "))
             self._chat_history.append(
-                UserMessage(content=f"Transferred to {self.id.type}, adopt the persona immediately.", source="system")
+                UserMessage(
+                    content=f"Transferred to {self.id.type}, adopt the persona immediately.",
+                    source="system",
+                )
             )
             # Ensure that the image generation tool is used.
             completion = await self._model_client.create(
@@ -168,7 +187,6 @@ async def main() -> None:
                 DefaultTopicId(type=self._group_chat_topic_type),
             )
 
-
     class UserAgent(RoutedAgent):
         def __init__(self, description: str, group_chat_topic_type: str) -> None:
             super().__init__(description=description)
@@ -180,14 +198,15 @@ async def main() -> None:
             pass
 
         @message_handler
-        async def handle_request_to_speak(self, message: RequestToSpeak, ctx: MessageContext) -> None:
+        async def handle_request_to_speak(
+            self, message: RequestToSpeak, ctx: MessageContext
+        ) -> None:
             user_input = input("Enter your message, type 'APPROVE' to conclude the task: ")
             Console().print(Markdown(f"### User: \n{user_input}"))
             await self.publish_message(
                 GroupChatMessage(body=UserMessage(content=user_input, source=self.id.type)),
                 DefaultTopicId(type=self._group_chat_topic_type),
             )
-
 
     class GroupChatManager(RoutedAgent):
         def __init__(
@@ -257,14 +276,18 @@ async def main() -> None:
                     ),
                 )
             )
-            completion = await self._model_client.create([system_message], cancellation_token=ctx.cancellation_token)
+            completion = await self._model_client.create(
+                [system_message], cancellation_token=ctx.cancellation_token
+            )
             assert isinstance(completion.content, str)
             selected_topic_type: str
             for topic_type in self._participant_topic_types:
                 if topic_type.lower() in completion.content.lower():
                     selected_topic_type = topic_type
                     self._previous_participant_topic_type = selected_topic_type
-                    await self.publish_message(RequestToSpeak(), DefaultTopicId(type=selected_topic_type))
+                    await self.publish_message(
+                        RequestToSpeak(), DefaultTopicId(type=selected_topic_type)
+                    )
                     return
             raise ValueError(f"Invalid role selected: {completion.content}")
 
@@ -295,8 +318,12 @@ async def main() -> None:
             model_client=model_client,
         ),
     )
-    await runtime.add_subscription(TypeSubscription(topic_type=editor_topic_type, agent_type=editor_agent_type.type))
-    await runtime.add_subscription(TypeSubscription(topic_type=group_chat_topic_type, agent_type=editor_agent_type.type))
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=editor_topic_type, agent_type=editor_agent_type.type)
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=group_chat_topic_type, agent_type=editor_agent_type.type)
+    )
 
     writer_agent_type = await WriterAgent.register(
         runtime,
@@ -307,8 +334,12 @@ async def main() -> None:
             model_client=model_client,
         ),
     )
-    await runtime.add_subscription(TypeSubscription(topic_type=writer_topic_type, agent_type=writer_agent_type.type))
-    await runtime.add_subscription(TypeSubscription(topic_type=group_chat_topic_type, agent_type=writer_agent_type.type))
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=writer_topic_type, agent_type=writer_agent_type.type)
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=group_chat_topic_type, agent_type=writer_agent_type.type)
+    )
 
     illustrator_agent_type = await IllustratorAgent.register(
         runtime,
@@ -332,18 +363,34 @@ async def main() -> None:
     user_agent_type = await UserAgent.register(
         runtime,
         user_topic_type,
-        lambda: UserAgent(description=user_description, group_chat_topic_type=group_chat_topic_type),
+        lambda: UserAgent(
+            description=user_description, group_chat_topic_type=group_chat_topic_type
+        ),
     )
-    await runtime.add_subscription(TypeSubscription(topic_type=user_topic_type, agent_type=user_agent_type.type))
-    await runtime.add_subscription(TypeSubscription(topic_type=group_chat_topic_type, agent_type=user_agent_type.type))
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=user_topic_type, agent_type=user_agent_type.type)
+    )
+    await runtime.add_subscription(
+        TypeSubscription(topic_type=group_chat_topic_type, agent_type=user_agent_type.type)
+    )
 
     group_chat_manager_type = await GroupChatManager.register(
         runtime,
         "group_chat_manager",
         lambda: GroupChatManager(
-            participant_topic_types=[writer_topic_type, illustrator_topic_type, editor_topic_type, user_topic_type],
+            participant_topic_types=[
+                writer_topic_type,
+                illustrator_topic_type,
+                editor_topic_type,
+                user_topic_type,
+            ],
             model_client=model_client,
-            participant_descriptions=[writer_description, illustrator_description, editor_description, user_description],
+            participant_descriptions=[
+                writer_description,
+                illustrator_description,
+                editor_description,
+                user_description,
+            ],
         ),
     )
     await runtime.add_subscription(

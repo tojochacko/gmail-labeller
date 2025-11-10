@@ -42,9 +42,7 @@ class EmailService:
         - Preserves existing labels when re-fetching (never overwrites manual labels)
         - Updates Gmail with "AI:Important" or "AI:Not Important" labels
         """
-        logger.info(
-            f"🔄 FETCH START: user={user_id}, max_results={max_results}, query={query}"
-        )
+        logger.info(f"🔄 FETCH START: user={user_id}, max_results={max_results}, query={query}")
         tokens = await self._ensure_tokens(user_id)
         messages = await self._gmail_service.list_messages(
             tokens=tokens,
@@ -68,9 +66,7 @@ class EmailService:
             item = self._parse_email(raw)
 
             # Check if email already exists and reuse ID + preserve fields
-            existing = await self._supabase.fetch_email_by_gmail_id(
-                user_id, item.gmail_message_id
-            )
+            existing = await self._supabase.fetch_email_by_gmail_id(user_id, item.gmail_message_id)
 
             if existing:
                 # ============================================
@@ -78,9 +74,7 @@ class EmailService:
                 # ============================================
                 existing_count += 1
                 item.id = existing.id
-                logger.debug(
-                    f"Reusing existing email ID {existing.id} for {item.gmail_message_id}"
-                )
+                logger.debug(f"Reusing existing email ID {existing.id} for {item.gmail_message_id}")
 
                 # Preserve consolidated label fields
                 if existing.label:
@@ -140,15 +134,13 @@ class EmailService:
                         try:
                             await self._gmail_service.apply_label(
                                 message_id=item.gmail_message_id,
-                                label_name=item.label,  # "Important" or "Not Important"
+                                label_id=item.label,  # "Important" or "Not Important"
                                 tokens=tokens,
                                 user_id=str(user_id),
                             )
                             logger.debug(f"✅ Applied '{item.label}' to Gmail")
                         except Exception as e:
-                            logger.warning(
-                                f"Failed to apply label to Gmail (continuing): {e}"
-                            )
+                            logger.warning(f"Failed to apply label to Gmail (continuing): {e}")
                     else:
                         # Confidence below threshold - email remains Uncategorized
                         logger.debug(
@@ -197,7 +189,7 @@ class EmailService:
                     received_at = parsedate_to_datetime(received_at)
                 except (ValueError, TypeError):
                     received_at = datetime.now(timezone.utc)
-            
+
             # Extract sender from Composio format
             sender_email = message.get("sender") or message.get("from")
         else:
@@ -205,7 +197,7 @@ class EmailService:
             headers = self._normalize_headers(message.get("payload", {}).get("headers", []))
             subject = headers.get("subject", "(no subject)")
             received_at = self._extract_received_at(headers) or datetime.now(timezone.utc)
-            
+
             # Extract sender from headers
             sender_email = headers.get("from")
 
@@ -213,6 +205,7 @@ class EmailService:
         sender_domain = None
         if sender_email:
             import re
+
             match = re.search(r"@([\w\.-]+)", sender_email)
             if match:
                 sender_domain = match.group(1).lower()

@@ -9,8 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 def to_camel(string: str) -> str:
     """Convert snake_case to camelCase."""
-    components = string.split('_')
-    return components[0] + ''.join(x.title() for x in components[1:])
+    components = string.split("_")
+    return components[0] + "".join(x.title() for x in components[1:])
 
 
 # Type aliases for label-related fields
@@ -54,29 +54,27 @@ class EmailItem(BaseModel):
     # ============================================
     label: Optional[LabelType] = Field(
         default=None,
-        description="Consolidated label: 'Important', 'Not Important', or None for Uncategorized."
+        description="Consolidated label: 'Important', 'Not Important', or None for Uncategorized.",
     )
     label_confidence: Optional[float] = Field(
         default=None,
         ge=0.0,
         le=1.0,
-        description="Confidence score (0.0-1.0) for auto-applied labels. Manual labels have 1.0."
+        description="Confidence score (0.0-1.0) for auto-applied labels. Manual labels have 1.0.",
     )
     label_source: Optional[LabelSource] = Field(
         default=None,
         description=(
             "Source of label: 'auto' (pattern-based), 'manual' (user-applied), "
             "or 'agent' (AI suggestion)."
-        )
+        ),
     )
     labeled_at: Optional[datetime] = Field(
         default=None, description="Timestamp when label was applied or last updated."
     )
     last_updated_by: Optional[UpdatedBy] = Field(
-        default=None,
-        description="Last entity that updated the label: 'auto', 'user', or 'agent'."
+        default=None, description="Last entity that updated the label: 'auto', 'user', or 'agent'."
     )
-
 
 
 class EmailStats(BaseModel):
