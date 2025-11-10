@@ -4,7 +4,13 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+def to_camel(string: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = string.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
 
 
 # Type aliases for label-related fields
@@ -16,11 +22,18 @@ UpdatedBy = Literal["auto", "user", "agent"]
 class EmailItem(BaseModel):
     """Represents an email fetched from Gmail via Composio.
 
-    Schema Migration (2025-11-09):
-    - Consolidated label system from agent_suggestion + applied_label into single label field
-    - Added metadata fields for auto-labeling: confidence, source, labeled_at, last_updated_by
-    - Old fields marked as deprecated, will be removed after migration verification
+    Uses consolidated label system with metadata for auto-labeling:
+    - label: 'Important', 'Not Important', or None
+    - label_confidence: 0.0-1.0 confidence score
+    - label_source: 'auto', 'manual', or 'agent'
+    - labeled_at: timestamp when labeled
+    - last_updated_by: 'auto', 'user', or 'agent'
     """
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,  # Allow both snake_case and camelCase when parsing
+    )
 
     id: UUID = Field(..., description="Internal UUID for Supabase record.")
     gmail_message_id: str = Field(..., description="Gmail message identifier.")
@@ -64,26 +77,15 @@ class EmailItem(BaseModel):
         description="Last entity that updated the label: 'auto', 'user', or 'agent'."
     )
 
-    # ============================================
-    # DEPRECATED: Old Label Fields (Pre-Migration)
-    # Will be removed after migration verification
-    # ============================================
-    agent_suggestion: Optional[str] = Field(
-        default=None,
-        description="[DEPRECATED] Use 'label' field. Latest agent-generated recommendation."
-    )
-    applied_label: Optional[str] = Field(
-        default=None,
-        description="[DEPRECATED] Use 'label' field. User-applied label: Important or Not Important."
-    )
-    label_applied_at: Optional[datetime] = Field(
-        default=None,
-        description="[DEPRECATED] Use 'labeled_at' field. Timestamp when label was applied."
-    )
 
 
 class EmailStats(BaseModel):
     """Email categorization statistics."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     total: int = Field(..., description="Total number of emails")
     important: int = Field(..., description="Number of emails labeled Important")
@@ -96,11 +98,21 @@ class EmailStats(BaseModel):
 class EmailListResponse(BaseModel):
     """Response payload for GET /api/emails."""
 
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     items: list[EmailItem]
 
 
 class EmailListResponseWithStats(BaseModel):
     """Enhanced response payload with categorization statistics."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     items: list[EmailItem]
     stats: EmailStats

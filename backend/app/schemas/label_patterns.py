@@ -127,7 +127,7 @@ class PatternExtractionRequest(BaseModel):
     """Request to extract patterns from a labeled email."""
 
     email_id: UUID
-    applied_label: Literal["Important", "Not Important"]
+    label: Literal["Important", "Not Important"]
     sender_email: str
     email_subject: str
     email_snippet: Optional[str] = None

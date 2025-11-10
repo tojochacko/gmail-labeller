@@ -48,7 +48,7 @@ def test_apply_label_succeeds(client: TestClient) -> None:
     }
     response = client.post("/api/labels", json=payload)
     assert response.status_code == 200
-    assert response.json()["applied_label"] == "AUTO_LABEL"
+    assert response.json()["label"] == "AUTO_LABEL"
 
 
 def test_agent_run_endpoints(client: TestClient, fake_agent_service) -> None:

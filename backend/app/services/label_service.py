@@ -97,11 +97,7 @@ class LabelService:
         old_label = None
 
         if email:
-            # Check new consolidated field first (preferred)
             old_label = email.label
-            # Fallback to deprecated fields for backward compatibility
-            if not old_label:
-                old_label = email.applied_label or email.agent_suggestion
 
             if old_label and old_label != request.label_name:
                 is_remark = True
@@ -203,7 +199,7 @@ class LabelService:
         logger.info(
             f"🏷️  APPLY_LABEL COMPLETE: label={label_id}, is_remark={is_remark}"
         )
-        return ApplyLabelResponse(success=True, applied_label=label_id)
+        return ApplyLabelResponse(success=True, label=label_id)
 
 
     async def _ensure_email_in_database(
@@ -291,9 +287,11 @@ class LabelService:
                 if isinstance(message_data.get("date"), str)
                 else message_data.get("received_at", datetime.now(timezone.utc)),
                 processed_at=None,
-                agent_suggestion=None,
-                applied_label=None,
-                label_applied_at=None,
+                label=None,
+                label_confidence=None,
+                label_source=None,
+                labeled_at=None,
+                last_updated_by=None,
             )
 
             logger.info(
@@ -346,7 +344,7 @@ class LabelService:
             # Extract patterns from the labeled email
             extraction_request = PatternExtractionRequest(
                 email_id=email.id,
-                applied_label=applied_label,
+                label=applied_label,
                 sender_email=email.sender_email,
                 email_subject=email.subject or "",
                 email_snippet=email.snippet,
@@ -357,11 +355,16 @@ class LabelService:
                 user_id=user_id,
             )
 
-            # Update email with applied label metadata
+            # Update email with applied label using new consolidated schema
             domain = self._extract_domain(email.sender_email)
-            await self._supabase.update_email_label(
+            from datetime import datetime, timezone
+            await self._supabase.update_email_with_new_schema(
                 email_id=email.id,
-                applied_label=applied_label,
+                label=applied_label,
+                label_confidence=1.0,  # Manual labels have 100% confidence
+                label_source="manual",
+                labeled_at=datetime.now(timezone.utc),
+                last_updated_by="user",
                 sender_domain=domain,
             )
 

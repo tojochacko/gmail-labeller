@@ -83,7 +83,7 @@ class FakeSupabaseService:
 class FakeGmailService:
     def __init__(self) -> None:
         self.generated_state: list[str] = []
-        self.applied_labels: list[tuple[str, str]] = []
+        self.labels: list[tuple[str, str]] = []
         self._tokens = GmailTokens(
             access_token=SecretStr("access-token"),
             refresh_token=SecretStr("refresh-token"),
@@ -117,7 +117,7 @@ class FakeGmailService:
     async def apply_label(
         self, message_id: str, label_id: str, tokens: GmailTokens, user_id: str
     ) -> None:
-        self.applied_labels.append((message_id, label_id))
+        self.labels.append((message_id, label_id))
 
 
 class FakeEmailService:
@@ -139,7 +139,7 @@ class FakeEmailService:
 
 class FakeLabelService:
     async def apply_label(self, request: ApplyLabelRequest) -> ApplyLabelResponse:
-        return ApplyLabelResponse(success=True, applied_label=request.label_name)
+        return ApplyLabelResponse(success=True, label=request.label_name)
 
 
 class FakeAgentService:

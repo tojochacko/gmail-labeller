@@ -6,6 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 
 from ..dependencies import get_email_service
 from ..schemas.email import EmailItem, EmailListResponse, EmailListResponseWithStats, EmailStats
@@ -16,7 +17,6 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=EmailListResponseWithStats,
     status_code=status.HTTP_200_OK,
 )
 async def list_emails(
@@ -41,7 +41,7 @@ async def list_emails(
         description="Include categorization statistics in response",
     ),
     email_service: EmailService = Depends(get_email_service),
-) -> EmailListResponseWithStats:
+) -> JSONResponse:
     """Fetch latest Gmail messages for the authenticated user.
 
     NEW (2025-11-09): Now supports category filtering and returns statistics!
@@ -76,9 +76,15 @@ async def list_emails(
             detail=str(exc)
         ) from exc
 
-    return EmailListResponseWithStats(
+    response_model = EmailListResponseWithStats(
         items=filtered_emails,
         stats=stats,
+    )
+
+    # Explicitly serialize with by_alias=True to convert snake_case to camelCase
+    return JSONResponse(
+        content=response_model.model_dump(mode='json', by_alias=True),
+        status_code=status.HTTP_200_OK,
     )
 
 
@@ -119,15 +125,9 @@ def _calculate_stats(emails: list[EmailItem]) -> EmailStats:
     not_important = sum(1 for e in emails if e.label == "Not Important")
     uncategorized = sum(1 for e in emails if not e.label)
 
-    # Count by labeling source (new schema)
+    # Count by labeling source
     auto_labeled = sum(1 for e in emails if e.label_source == "auto")
     manual_labeled = sum(1 for e in emails if e.label_source == "manual")
-
-    # Fallback to deprecated fields if new schema not populated yet
-    if auto_labeled == 0 and manual_labeled == 0:
-        manual_labeled = sum(1 for e in emails if e.applied_label)
-        # agent_suggestion count (deprecated, but include for transition period)
-        auto_labeled = sum(1 for e in emails if e.agent_suggestion and not e.applied_label)
 
     return EmailStats(
         total=total,

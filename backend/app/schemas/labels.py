@@ -20,4 +20,4 @@ class ApplyLabelResponse(BaseModel):
     """Response payload for label application results."""
 
     success: bool
-    applied_label: str
+    label: str

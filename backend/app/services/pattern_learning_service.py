@@ -162,7 +162,7 @@ class PatternLearningService:
         if domain:
             await self._upsert_pattern(
                 user_id=user_id,
-                label_type=request.applied_label,
+                label_type=request.label,
                 pattern_type="domain",
                 pattern_value=domain,
             )
@@ -173,7 +173,7 @@ class PatternLearningService:
         for keyword in keywords:
             await self._upsert_pattern(
                 user_id=user_id,
-                label_type=request.applied_label,
+                label_type=request.label,
                 pattern_type="keyword",
                 pattern_value=keyword,
             )

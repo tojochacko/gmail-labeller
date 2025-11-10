@@ -153,6 +153,18 @@ function App() {
 
     try {
       const result = await api.emails.fetch({ userId: session.userId, maxResults: 10 })
+
+      // DEBUG: Log raw response
+      console.log('=== EMAIL FETCH DEBUG ===')
+      console.log('Total emails fetched:', result.items.length)
+      console.log('Stats:', result.stats)
+      console.log('First email (raw):', result.items[0])
+      if (result.items[0]) {
+        console.log('First email label field:', result.items[0].label)
+        console.log('First email labelSource field:', result.items[0].labelSource)
+        console.log('First email labelConfidence field:', result.items[0].labelConfidence)
+      }
+
       setEmails(result.items)
       setEmailStats(result.stats || null)
 
@@ -307,22 +319,39 @@ function App() {
       )}
 
       {emails.length > 0 && (() => {
-        // Use new schema fields (label) with fallback to deprecated fields
+        // Helper to get email label
+        const getEffectiveLabel = (email: EmailItem): string | null => {
+          return email.label ?? null
+        }
+
         const importantEmails = emails.filter(
-          (email) => email.label === 'Important' || email.appliedLabel === 'Important' || email.agentSuggestion?.toLowerCase() === 'important'
+          (email) => getEffectiveLabel(email) === 'Important'
         )
         const notImportantEmails = emails.filter(
-          (email) => email.label === 'Not Important' || email.appliedLabel === 'Not Important' || email.agentSuggestion?.toLowerCase() === 'not important'
+          (email) => getEffectiveLabel(email) === 'Not Important'
         )
-        const uncategorizedEmails = emails.filter((email) => !email.label && !email.appliedLabel && !email.agentSuggestion)
+        const uncategorizedEmails = emails.filter((email) => !getEffectiveLabel(email))
+
+        // DEBUG: Log filtering results
+        console.log('=== FILTERING DEBUG ===')
+        console.log('Total emails:', emails.length)
+        console.log('Important emails:', importantEmails.length, importantEmails.map(e => ({
+          subject: e.subject,
+          label: e.label,
+        })))
+        console.log('Not Important emails:', notImportantEmails.length, notImportantEmails.map(e => ({
+          subject: e.subject,
+          label: e.label,
+        })))
+        console.log('Uncategorized emails:', uncategorizedEmails.length)
 
         // Helper function to render label badge with confidence
         const renderLabelBadge = (email: EmailItem) => {
+          const label = getEffectiveLabel(email)
+          if (!label) return null
+
           const isAutoLabeled = email.labelSource === 'auto'
           const confidence = email.labelConfidence
-          const label = email.label || email.appliedLabel || email.agentSuggestion
-
-          if (!label) return null
 
           return (
             <div style={{

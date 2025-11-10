@@ -79,13 +79,17 @@ class AgentService:
             result_payload=result_payload,
         )
 
-        # Update email with agent suggestion
+        # Update email with agent suggestion using new consolidated schema
         if result_payload and "suggestion" in result_payload:
             suggestion = result_payload["suggestion"]
             logger.info(f"Updating email {request.email_id} with suggestion: {suggestion}")
-            await self._supabase.update_email_suggestion(
+            await self._supabase.update_email_with_new_schema(
                 email_id=request.email_id,
-                agent_suggestion=suggestion,
+                label=suggestion,
+                label_confidence=0.5,  # Agent suggestions get medium confidence
+                label_source="agent",
+                labeled_at=datetime.now(timezone.utc),
+                last_updated_by="agent",
             )
             logger.info(f"Successfully updated email {request.email_id} with suggestion")
         else:
@@ -162,11 +166,15 @@ class AgentService:
             result_payload=result_payload,
         )
 
-        # Update email with agent suggestion if available
+        # Update email with agent suggestion using new consolidated schema
         if result_payload and "suggestion" in result_payload:
-            await self._supabase.update_email_suggestion(
+            await self._supabase.update_email_with_new_schema(
                 email_id=request.email_id,
-                agent_suggestion=result_payload["suggestion"],
+                label=result_payload["suggestion"],
+                label_confidence=0.5,  # Agent suggestions get medium confidence
+                label_source="agent",
+                labeled_at=datetime.now(timezone.utc),
+                last_updated_by="agent",
             )
 
         return AgentRunResponse(run_id=run_id, status=status)

@@ -151,16 +151,6 @@ class SupabaseService:
             )
             return None
 
-    async def update_email_suggestion(self, email_id: UUID, agent_suggestion: str) -> None:
-        """Update the agent_suggestion field for an email."""
-        await asyncio.to_thread(self._update_email_suggestion_sync, email_id, agent_suggestion)
-
-    def _update_email_suggestion_sync(self, email_id: UUID, agent_suggestion: str) -> None:
-        """Sync method to update email agent_suggestion."""
-        self.client.table("emails").update({"agent_suggestion": agent_suggestion}).eq(
-            "id", str(email_id)
-        ).execute()
-
     async def record_agent_run(
         self,
         run_id: UUID,
@@ -619,114 +609,8 @@ class SupabaseService:
             f"corrected={times_corrected}, confidence={new_confidence:.2f}"
         )
 
-    async def update_email_label(
-        self,
-        email_id: UUID,
-        applied_label: str,
-        sender_domain: Optional[str] = None,
-    ) -> None:
-        """
-        Update email with applied label and metadata.
-
-        Args:
-            email_id: Email ID
-            applied_label: Label applied ("Important" or "Not Important")
-            sender_domain: Extracted sender domain
-        """
-        logger.info(
-            f"💾 SUPABASE UPDATE START: email_id={email_id}, "
-            f"applied_label={applied_label}, sender_domain={sender_domain}"
-        )
-
-        try:
-            from datetime import datetime, timezone
-
-            updates = {
-                "applied_label": applied_label,
-                "label_applied_at": datetime.now(timezone.utc).isoformat(),
-            }
-
-            if sender_domain:
-                updates["sender_domain"] = sender_domain
-
-            logger.info(f"🔍 UPDATE PAYLOAD CREATED: {updates}")
-            logger.info(f"🔍 Payload type check: applied_label type={type(updates.get('applied_label'))}, value='{updates.get('applied_label')}'")
-            logger.info(f"🔍 Payload type check: label_applied_at type={type(updates.get('label_applied_at'))}, value='{updates.get('label_applied_at')}'")
-            logger.debug(f"Update payload: {updates}")
-            logger.debug(f"Calling _update_email_label_sync with email_id={str(email_id)}...")
-
-            await asyncio.to_thread(self._update_email_label_sync, str(email_id), updates)
-
-            logger.info(
-                f"✅ SUPABASE UPDATE SUCCESS: email_id={email_id}, applied_label={applied_label}"
-            )
-
-        except Exception as e:
-            logger.error(
-                f"❌ SUPABASE UPDATE ERROR: email_id={email_id}, error type={type(e).__name__}, "
-                f"error={str(e)}",
-                exc_info=True,
-            )
-            raise
-
-    def _update_email_label_sync(self, email_id: str, updates: dict) -> None:
-        """Sync method to update email label."""
-        logger.info(f"🔄 _update_email_label_sync called with:")
-        logger.info(f"   email_id: {email_id} (type: {type(email_id)})")
-        logger.info(f"   updates dict: {updates}")
-        logger.info(f"   updates keys: {list(updates.keys())}")
-        logger.info(f"   updates values: {list(updates.values())}")
-
-        try:
-            # Build the query step by step to see what's happening
-            table = self.client.table("emails")
-            logger.debug(f"✓ Got table reference: {table}")
-            
-            query = table.update(updates)
-            logger.debug(f"✓ Created update query with payload: {updates}")
-            
-            query_with_filter = query.eq("id", email_id)
-            logger.debug(f"✓ Added filter: id = {email_id}")
-            
-            response = query_with_filter.execute()
-            logger.debug(f"✓ Executed query")
-
-            logger.info(f"📊 Raw Supabase response object: {response}")
-            logger.info(f"📊 Response type: {type(response)}")
-            
-            if hasattr(response, '__dict__'):
-                logger.debug(f"📊 Response.__dict__: {response.__dict__}")
-
-            # Check if any rows were actually updated
-            if hasattr(response, "data") and response.data:
-                logger.info(f"✅ Supabase returned {len(response.data)} row(s) in response")
-                logger.info(f"📊 Full response.data: {response.data}")
-                
-                # Verify the actual values in the returned data
-                if response.data and len(response.data) > 0:
-                    returned_row = response.data[0]
-                    logger.info(
-                        f"📋 CRITICAL - Returned row values from Supabase:"
-                    )
-                    logger.info(f"   - applied_label: {returned_row.get('applied_label')} (type: {type(returned_row.get('applied_label'))})")
-                    logger.info(f"   - label_applied_at: {returned_row.get('label_applied_at')} (type: {type(returned_row.get('label_applied_at'))})")
-                    logger.info(f"   - sender_domain: {returned_row.get('sender_domain')} (type: {type(returned_row.get('sender_domain'))})")
-                    logger.info(f"   - updated_at: {returned_row.get('updated_at')}")
-            else:
-                logger.warning(
-                    f"⚠️  Supabase update executed but no rows in response.data. "
-                    f"Email ID {email_id} may not exist in database."
-                )
-                logger.warning(f"response.data = {response.data if hasattr(response, 'data') else 'NO DATA ATTRIBUTE'}")
-
-        except Exception as e:
-            logger.error(
-                f"❌ Supabase update failed: email_id={email_id}, error={str(e)}", exc_info=True
-            )
-            raise
-
     # ============================================
-    # NEW: Consolidated Schema Update Methods
+    # Consolidated Schema Update Methods
     # ============================================
 
     async def update_email_with_new_schema(

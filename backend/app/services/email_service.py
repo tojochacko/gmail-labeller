@@ -82,24 +82,22 @@ class EmailService:
                     f"Reusing existing email ID {existing.id} for {item.gmail_message_id}"
                 )
 
-                # Preserve deprecated fields (for backward compatibility during migration)
-                if existing.agent_suggestion:
-                    item.agent_suggestion = existing.agent_suggestion
-                if existing.applied_label:
-                    item.applied_label = existing.applied_label
-                    item.label_applied_at = existing.label_applied_at
-
-                # Preserve NEW consolidated label fields (priority over deprecated fields)
+                # Preserve consolidated label fields
                 if existing.label:
                     item.label = existing.label
                     item.label_confidence = existing.label_confidence
                     item.label_source = existing.label_source
                     item.labeled_at = existing.labeled_at
                     item.last_updated_by = existing.last_updated_by
+                    confidence_display = (
+                        f"{existing.label_confidence:.2f}"
+                        if existing.label_confidence is not None
+                        else "N/A"
+                    )
                     logger.debug(
                         f"Preserved label '{existing.label}' "
                         f"(source: {existing.label_source}, "
-                        f"confidence: {existing.label_confidence:.2f if existing.label_confidence else 'N/A'})"
+                        f"confidence: {confidence_display})"
                     )
 
                 # Preserve sender_domain if it was already extracted
@@ -246,20 +244,12 @@ class EmailService:
             sender_domain=sender_domain,
             received_at=received_at,
             processed_at=None,
-            # ============================================
-            # NEW: Consolidated Label Fields (Post-Migration)
-            # ============================================
-            label=None,  # Will be set by auto-labeling engine
+            # Consolidated label fields - will be set by auto-labeling engine
+            label=None,
             label_confidence=None,
             label_source=None,
             labeled_at=None,
             last_updated_by=None,
-            # ============================================
-            # DEPRECATED: Old Label Fields (Pre-Migration)
-            # ============================================
-            agent_suggestion=None,
-            applied_label=None,
-            label_applied_at=None,
         )
 
     def _normalize_headers(self, headers: Sequence[dict]) -> dict[str, str]:

@@ -141,29 +141,53 @@ app.on('activate', () => {
 
 type BackendEmailItem = {
   id: string
-  gmail_message_id: string
-  thread_id: string
+  gmailMessageId: string
+  threadId: string
   subject?: string | null
   snippet?: string | null
-  received_at?: string | null
-  processed_at?: string | null
-  agent_suggestion?: string | null
+  senderEmail?: string | null
+  senderDomain?: string | null
+  receivedAt?: string | null
+  processedAt?: string | null
+  // NEW: Consolidated label fields (camelCase from backend)
+  label?: string | null
+  labelConfidence?: number | null
+  labelSource?: 'auto' | 'manual' | 'agent' | null
+  labeledAt?: string | null
+  lastUpdatedBy?: 'auto' | 'user' | 'agent' | null
+}
+
+type BackendEmailStats = {
+  total: number
+  important: number
+  notImportant: number
+  uncategorized: number
+  autoLabeled: number
+  manualLabeled: number
 }
 
 type BackendEmailList = {
   items: BackendEmailItem[]
+  stats?: BackendEmailStats
 }
 
 function mapEmailResponse(item: BackendEmailItem): EmailItem {
   return {
     id: item.id,
-    gmailMessageId: item.gmail_message_id,
-    threadId: item.thread_id,
+    gmailMessageId: item.gmailMessageId,
+    threadId: item.threadId,
     subject: item.subject ?? '',
     snippet: item.snippet ?? null,
-    receivedAt: item.received_at ?? new Date().toISOString(),
-    processedAt: item.processed_at ?? null,
-    agentSuggestion: item.agent_suggestion ?? null,
+    senderEmail: item.senderEmail ?? null,
+    senderDomain: item.senderDomain ?? null,
+    receivedAt: item.receivedAt ?? new Date().toISOString(),
+    processedAt: item.processedAt ?? null,
+    // NEW: Consolidated label fields
+    label: item.label ?? null,
+    labelConfidence: item.labelConfidence ?? null,
+    labelSource: item.labelSource ?? null,
+    labeledAt: item.labeledAt ?? null,
+    lastUpdatedBy: item.lastUpdatedBy ?? null,
   }
 }
 
@@ -230,6 +254,14 @@ ipcMain.handle(
 
   return {
     items: result.items.map(mapEmailResponse),
+    stats: result.stats || {
+      total: result.items.length,
+      important: 0,
+      notImportant: 0,
+      uncategorized: result.items.length,
+      autoLabeled: 0,
+      manualLabeled: 0,
+    },
   }
   },
 )
@@ -252,7 +284,7 @@ ipcMain.handle(
 
   return {
     success: result.success,
-    appliedLabel: result.applied_label,
+    label: result.label,
   }
   },
 )

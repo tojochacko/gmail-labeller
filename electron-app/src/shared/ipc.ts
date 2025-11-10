@@ -41,10 +41,6 @@ export interface EmailItem {
   labelSource?: 'auto' | 'manual' | 'agent' | null  // Source of label
   labeledAt?: string | null  // ISO timestamp when labeled
   lastUpdatedBy?: 'auto' | 'user' | 'agent' | null  // Last updater
-  // DEPRECATED: Old fields (for backward compatibility)
-  agentSuggestion?: string | null
-  appliedLabel?: string | null
-  labelAppliedAt?: string | null
 }
 
 export interface EmailStats {
@@ -70,7 +66,7 @@ export interface ApplyLabelRequest {
 
 export interface ApplyLabelResponse {
   success: boolean
-  appliedLabel: string
+  label: string
 }
 
 export interface AgentRunRequest {
