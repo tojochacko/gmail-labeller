@@ -905,6 +905,7 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
 - **PROJECT_STATUS.md**: Current project status and testing instructions
 - **COMPOSIO_INTEGRATION_FIX.md**: Composio 1.0 API migration guide
 - **OAUTH_TEST_REPORT.md**: OAuth workflow test documentation
+- All plan and summary documentation exists in the docs/ folder
 
 ## Environment Variables
 
