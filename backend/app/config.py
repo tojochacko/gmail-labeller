@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     sentry_dsn: Optional[str] = Field(default=None, alias="SENTRY_DSN")
 
     class Config:
-        env_file = ".env"
+        env_file = "config/.env"
         case_sensitive = True
         extra = "ignore"
 

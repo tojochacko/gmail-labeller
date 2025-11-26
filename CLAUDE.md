@@ -961,16 +961,16 @@ OPENAI_API_KEY=your_openai_key_here
 
 ```bash
 # Copy example env file
-cp config/env.example .env
+cp config/env.example config/.env
 
 # Generate Fernet encryption key
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# Copy output to FERNET_SECRET_KEY in .env
+# Copy output to FERNET_SECRET_KEY in config/.env
 
-# Edit .env and fill in all required values
+# Edit config/.env and fill in all required values
 ```
 
-**Note**: The `.env` file contains API keys and should NEVER be committed to version control. It is already in `.gitignore`.
+**Note**: The `config/.env` file contains API keys and should NEVER be committed to version control. It is already in `.gitignore`.
 
 ## Agent Lifecycle
 
