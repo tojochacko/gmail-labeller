@@ -25,7 +25,7 @@
 **Time**: ~60 minutes (estimated 60 minutes)
 **Status**: Backend configured and ready to run
 
-- ✅ Fernet encryption key generated: `-7LpgDljE3POoyKnONWCzOHbNCbSZsHEdiLVEDrxp5o=`
+- ✅ Fernet encryption key generated and added to `.env`
 - ✅ Environment variables configured in `.env`
 - ✅ AGENT_RUNTIME_BASE_URL made optional (mock mode available)
 - ✅ Supabase database schema created (`database/supabase_schema.sql`)

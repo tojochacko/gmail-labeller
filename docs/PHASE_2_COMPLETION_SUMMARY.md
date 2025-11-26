@@ -15,7 +15,7 @@ Phase 2 focused on backend integration and configuration to enable the Electron 
 
 ### 1. Generated Fernet Encryption Key
 - **Purpose**: Encrypt OAuth tokens at rest in Supabase
-- **Generated Key**: `-7LpgDljE3POoyKnONWCzOHbNCbSZsHEdiLVEDrxp5o=`
+- **Generated Key**: `[REDACTED - See .env file]`
 - **Status**: Added to `.env` file
 
 ### 2. Updated .env Configuration
@@ -90,21 +90,21 @@ Phase 2 focused on backend integration and configuration to enable the Electron 
 
 ```env
 # Supabase
-SUPABASE_URL="https://ufyewtgrrkwvnjuigmxv.supabase.co"
-SUPABASE_ANON_KEY="eyJh..."
-SUPABASE_SERVICE_ROLE_KEY="eyJh..."
+SUPABASE_URL="https://your-project-id.supabase.co"
+SUPABASE_ANON_KEY="your_supabase_anon_key_here"
+SUPABASE_SERVICE_ROLE_KEY="your_supabase_service_role_key_here"
 
 # Encryption
-FERNET_SECRET_KEY="-7LpgDljE3POoyKnONWCzOHbNCbSZsHEdiLVEDrxp5o="
+FERNET_SECRET_KEY="your_32_byte_base64_fernet_key_here"
 
 # Google OAuth
-GOOGLE_OAUTH_CLIENT_ID="177218648049-bhpm4fm1g0k561m5fmpdbemaio906ku0.apps.googleusercontent.com"
-GOOGLE_OAUTH_CLIENT_SECRET="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"
+GOOGLE_OAUTH_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
+GOOGLE_OAUTH_CLIENT_SECRET="your_google_client_secret_here"
 GOOGLE_OAUTH_REDIRECT_URI="http://localhost:3005/oauth/callback"
 GOOGLE_OAUTH_SCOPE="https://www.googleapis.com/auth/gmail.modify"
 
 # Composio
-COMPOSIO_API_KEY="ak_mRuJPKttBw30Sz70gGup"
+COMPOSIO_API_KEY="your_composio_api_key_here"
 COMPOSIO_ACCOUNT_ID="default"
 ```
 

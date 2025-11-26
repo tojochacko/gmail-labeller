@@ -14,7 +14,7 @@
 
 ### 2. **Configuration** ✅
 - All environment variables loaded correctly:
-  - ✅ `SUPABASE_URL`: https://ufyewtgrrkwvnjuigmxv.supabase.co/
+  - ✅ `SUPABASE_URL`: Configured
   - ✅ `SUPABASE_SERVICE_ROLE_KEY`: Updated (proper service role key)
   - ✅ `GOOGLE_OAUTH_CLIENT_ID`: Configured
   - ✅ `COMPOSIO_API_KEY`: Configured
