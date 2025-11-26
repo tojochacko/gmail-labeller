@@ -16,3 +16,5 @@ node_modules
 # Modified by developer
 .env
 config/.env*
+.mcp.json
+.tool-versions
