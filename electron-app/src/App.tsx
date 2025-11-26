@@ -7,6 +7,7 @@ import type {
   OAuthStatusResponse,
 } from './shared/ipc'
 import { PatternViewer } from './components/PatternViewer'
+import { AutoFetchSettings } from './components/AutoFetchSettings'
 
 import './App.css'
 
@@ -187,6 +188,24 @@ function App() {
     }
   }, [api, session])
 
+  // Auto-fetch trigger listener
+  useEffect(() => {
+    const handleAutoFetchTrigger = () => {
+      console.log('Auto-fetch triggered, fetching emails...')
+      if (session && isConnected) {
+        handleFetchEmails().catch((error) => {
+          console.error('Auto-fetch failed:', error)
+        })
+      }
+    }
+
+    window.addEventListener('auto-fetch-trigger', handleAutoFetchTrigger)
+
+    return () => {
+      window.removeEventListener('auto-fetch-trigger', handleAutoFetchTrigger)
+    }
+  }, [session, isConnected, handleFetchEmails])
+
   const handleReconnect = useCallback(() => {
     if (!session) return
     void startOAuthFlow(session)
@@ -317,6 +336,8 @@ function App() {
           {emailsError && <p className='status status--error'>{emailsError}</p>}
         </section>
       )}
+
+      {isConnected && <AutoFetchSettings />}
 
       {emails.length > 0 && (() => {
         // Helper to get email label

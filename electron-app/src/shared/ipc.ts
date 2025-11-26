@@ -89,6 +89,65 @@ export interface AgentRunStatusResponse {
   errorMessage?: string | null
 }
 
+// Auto-fetch types
+export interface AutoFetchSettings {
+  enabled: boolean
+  intervalMinutes: number
+  notificationsEnabled: boolean
+  lastFetchTimestamp: string | null
+  fetchOnStartup: boolean
+}
+
+export interface AutoFetchStatus {
+  enabled: boolean
+  intervalMinutes: number
+  lastFetchTimestamp: string | null
+  isRunning: boolean
+  retryCount: number
+  nextFetchIn: number | null
+}
+
+export interface AutoFetchStartResponse {
+  success: boolean
+  status?: AutoFetchStatus
+  error?: string
+}
+
+export interface AutoFetchStopResponse {
+  success: boolean
+  status?: AutoFetchStatus
+  error?: string
+}
+
+export interface AutoFetchUpdateResponse {
+  success: boolean
+  status?: AutoFetchStatus
+  error?: string
+}
+
+export interface AutoFetchFetchNowResponse {
+  success: boolean
+  result?: {
+    success: boolean
+    newEmailCount: number
+    stats: {
+      total: number
+      important: number
+      notImportant: number
+      uncategorized: number
+      autoLabeled: number
+    }
+    error?: string
+  }
+  error?: string
+}
+
+export interface AutoFetchStatusChangedPayload {
+  event: string
+  data?: any
+  status: AutoFetchStatus
+}
+
 export interface ElectronAPI {
   oauth: {
     start: (payload: OAuthStartRequest) => Promise<OAuthStartResponse>
@@ -104,5 +163,13 @@ export interface ElectronAPI {
   runs: {
     trigger: (payload: AgentRunRequest) => Promise<AgentRunResponse>
     status: (runId: string) => Promise<AgentRunStatusResponse>
+  }
+  autoFetch: {
+    start: (settings: Partial<AutoFetchSettings>) => Promise<AutoFetchStartResponse>
+    stop: () => Promise<AutoFetchStopResponse>
+    getStatus: () => Promise<AutoFetchStatus>
+    updateSettings: (settings: Partial<AutoFetchSettings>) => Promise<AutoFetchUpdateResponse>
+    fetchNow: () => Promise<AutoFetchFetchNowResponse>
+    onStatusChanged: (handler: (payload: AutoFetchStatusChangedPayload) => void) => () => void
   }
 }

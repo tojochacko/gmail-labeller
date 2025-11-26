@@ -5,6 +5,13 @@ import type {
   AgentRunStatusResponse,
   ApplyLabelRequest,
   ApplyLabelResponse,
+  AutoFetchFetchNowResponse,
+  AutoFetchSettings,
+  AutoFetchStartResponse,
+  AutoFetchStatus,
+  AutoFetchStatusChangedPayload,
+  AutoFetchStopResponse,
+  AutoFetchUpdateResponse,
   EmailFetchRequest,
   EmailFetchResponse,
   ElectronAPI,
@@ -33,6 +40,21 @@ const electronAPI: ElectronAPI = {
   runs: {
     trigger: (payload: AgentRunRequest) => ipcRenderer.invoke('runs:trigger', payload) as Promise<AgentRunResponse>,
     status: (runId: string) => ipcRenderer.invoke('runs:status', { runId }) as Promise<AgentRunStatusResponse>,
+  },
+  autoFetch: {
+    start: (settings: Partial<AutoFetchSettings>) =>
+      ipcRenderer.invoke('auto-fetch:start', settings) as Promise<AutoFetchStartResponse>,
+    stop: () => ipcRenderer.invoke('auto-fetch:stop') as Promise<AutoFetchStopResponse>,
+    getStatus: () => ipcRenderer.invoke('auto-fetch:get-status') as Promise<AutoFetchStatus>,
+    updateSettings: (settings: Partial<AutoFetchSettings>) =>
+      ipcRenderer.invoke('auto-fetch:update-settings', settings) as Promise<AutoFetchUpdateResponse>,
+    fetchNow: () => ipcRenderer.invoke('auto-fetch:fetch-now') as Promise<AutoFetchFetchNowResponse>,
+    onStatusChanged: (handler: (payload: AutoFetchStatusChangedPayload) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: AutoFetchStatusChangedPayload) =>
+        handler(data)
+      ipcRenderer.on('auto-fetch:status-changed', listener)
+      return () => ipcRenderer.removeListener('auto-fetch:status-changed', listener)
+    },
   },
 }
 

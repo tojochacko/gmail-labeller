@@ -20,6 +20,7 @@ import {
   stopOAuthServer,
 } from './oauth-server'
 import { update } from './update'
+import { AutoFetchService, type AutoFetchSettings } from './auto-fetch-service'
 
 loadEnv()
 
@@ -61,6 +62,7 @@ const preload = path.join(__dirname, '../preload/index.mjs')
 const indexHtml = path.join(RENDERER_DIST, 'index.html')
 
 let oauthServerInitialised = false
+let autoFetchService: AutoFetchService | null = null
 
 function ensureOAuthServer() {
   if (!oauthServerInitialised) {
@@ -111,6 +113,13 @@ async function createWindow() {
 
   // Auto update
   update(win)
+
+  // Initialize auto-fetch service
+  autoFetchService = new AutoFetchService(win)
+  // Start auto-fetch if enabled in settings
+  autoFetchService.start()
+
+  return win
 }
 
 app.whenReady().then(createWindow)
@@ -119,6 +128,11 @@ app.on('window-all-closed', () => {
   win = null
   stopOAuthServer()
   oauthServerInitialised = false
+  // Stop auto-fetch service
+  if (autoFetchService) {
+    autoFetchService.stop()
+    autoFetchService = null
+  }
   if (process.platform !== 'darwin') app.quit()
 })
 
@@ -284,7 +298,7 @@ ipcMain.handle(
 
   return {
     success: result.success,
-    label: result.label,
+    label: result.applied_label,
   }
   },
 )
@@ -332,3 +346,84 @@ ipcMain.handle(
   }
   },
 )
+
+// Auto-fetch IPC handlers
+ipcMain.handle(
+  'auto-fetch:start',
+  async (_event: IpcMainInvokeEvent, settings: Partial<AutoFetchSettings>) => {
+  if (!autoFetchService) {
+    return { success: false, error: 'Auto-fetch service not initialized' }
+  }
+
+  try {
+    // Update settings with enabled = true
+    autoFetchService.updateSettings({ ...settings, enabled: true })
+    autoFetchService.start()
+    return { success: true, status: autoFetchService.getStatus() }
+  } catch (error: any) {
+    console.error('Failed to start auto-fetch:', error)
+    return { success: false, error: error.message }
+  }
+  },
+)
+
+ipcMain.handle('auto-fetch:stop', async (_event: IpcMainInvokeEvent) => {
+  if (!autoFetchService) {
+    return { success: false, error: 'Auto-fetch service not initialized' }
+  }
+
+  try {
+    autoFetchService.updateSettings({ enabled: false })
+    autoFetchService.stop()
+    return { success: true, status: autoFetchService.getStatus() }
+  } catch (error: any) {
+    console.error('Failed to stop auto-fetch:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('auto-fetch:get-status', async (_event: IpcMainInvokeEvent) => {
+  if (!autoFetchService) {
+    return {
+      enabled: false,
+      intervalMinutes: 30,
+      lastFetchTimestamp: null,
+      isRunning: false,
+      retryCount: 0,
+      nextFetchIn: null,
+    }
+  }
+
+  return autoFetchService.getStatus()
+})
+
+ipcMain.handle(
+  'auto-fetch:update-settings',
+  async (_event: IpcMainInvokeEvent, settings: Partial<AutoFetchSettings>) => {
+  if (!autoFetchService) {
+    return { success: false, error: 'Auto-fetch service not initialized' }
+  }
+
+  try {
+    autoFetchService.updateSettings(settings)
+    return { success: true, status: autoFetchService.getStatus() }
+  } catch (error: any) {
+    console.error('Failed to update auto-fetch settings:', error)
+    return { success: false, error: error.message }
+  }
+  },
+)
+
+ipcMain.handle('auto-fetch:fetch-now', async (_event: IpcMainInvokeEvent) => {
+  if (!autoFetchService) {
+    return { success: false, error: 'Auto-fetch service not initialized' }
+  }
+
+  try {
+    const result = await autoFetchService.fetchNow()
+    return { success: result.success, result }
+  } catch (error: any) {
+    console.error('Manual fetch failed:', error)
+    return { success: false, error: error.message }
+  }
+})
