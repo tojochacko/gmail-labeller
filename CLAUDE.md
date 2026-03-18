@@ -44,17 +44,10 @@ The project consists of two main components:
    - Supabase for data persistence
    - Runs in devcontainer on port 8000
 
-2. **Frontend (Electron App)** - Desktop application (`/workspaces/autogen-test/electron-app/`)
-   - Electron-based desktop client for Gmail labeling
-   - React + TypeScript + Vite
-   - Communicates with backend API
-   - **Runs on host machine (NOT in devcontainer due to GUI requirements)**
-
 ### Key Applications
 
 - **Command-line demos**: Autogen agent examples (main.py, customer-support.py, etc.)
 - **Backend API**: FastAPI server for OAuth and Gmail operations
-- **Electron Desktop App**: Gmail Labeler with AI-powered label suggestions
 
 ## Key Dependencies
 
@@ -69,13 +62,6 @@ The project consists of two main components:
 - **Rich**: Console output formatting
 - **Uvicorn**: ASGI server for FastAPI
 
-### Frontend (TypeScript/JavaScript)
-- **Electron**: Desktop application framework (v39.0.0)
-- **React**: UI component library
-- **Vite**: Build tool and development server
-- **TypeScript**: Type-safe JavaScript
-- **pnpm**: Fast package manager
-
 ## Environment Setup
 
 ### Development Container
@@ -83,55 +69,6 @@ The project uses a devcontainer with:
 - Base image: `mcr.microsoft.com/devcontainers/base:ubuntu`
 - Docker-outside-of-docker for container management
 - Python with `uv` package manager
-
-### ⚠️ Critical: Development Workflow (Backend + Frontend)
-
-**IMPORTANT**: Due to GUI requirements, the Electron app CANNOT run inside the devcontainer.
-
-#### Hybrid Development Approach
-
-1. **Backend (Python/FastAPI)** - Runs IN devcontainer ✅
-   - All Python code and backend API
-   - Database operations
-   - Autogen agent examples
-   - Testing and linting
-
-2. **Frontend (Electron App)** - Runs ON HOST MACHINE ⚠️
-   - Electron requires GUI libraries (libglib, X11, etc.) not available in headless containers
-   - Must be run directly on your host machine
-   - Connects to backend via `http://localhost:8000` (port forwarded from devcontainer)
-
-#### Quick Start Commands
-
-**Terminal 1 (DevContainer) - Start Backend:**
-```bash
-cd /workspaces/autogen-test
-uv run uvicorn backend.app.main:create_app --reload --host 0.0.0.0 --port 8000
-```
-⚠️ **CRITICAL**: Use `0.0.0.0` (NOT `127.0.0.1`) so the backend is accessible from host machine
-
-**Terminal 2 (Host Machine) - Start Electron App:**
-```bash
-# Run on your host machine (outside devcontainer)
-cd /path/to/autogen-test/electron-app
-pnpm install  # First time only
-pnpm dev
-```
-
-#### What Works in DevContainer
-
-✅ **You CAN do these in devcontainer:**
-- TypeScript compilation (`npx tsc --noEmit`)
-- Linting (`pnpm lint`)
-- Unit tests (`pnpm test`)
-- Production builds (`pnpm build`)
-- Backend development
-- Python testing and linting
-
-❌ **You CANNOT do this in devcontainer:**
-- Run `pnpm dev` (Electron GUI requires display server)
-
-**For alternative solutions**: See `ELECTRON_DEVCONTAINER_ISSUE.md` (Xvfb, X11 forwarding)
 
 ### UV Package Management
 
@@ -233,25 +170,6 @@ curl http://localhost:8000/health
 
 # View API documentation
 # Open http://localhost:8000/docs in browser
-```
-
-#### Electron Desktop App (Host Machine)
-```bash
-# Start Electron app (RUN ON HOST MACHINE, NOT IN DEVCONTAINER)
-cd /path/to/autogen-test/electron-app
-pnpm dev
-
-# Production build (can run in devcontainer)
-cd /workspaces/autogen-test/electron-app
-pnpm build
-
-# TypeScript type checking (devcontainer)
-cd /workspaces/autogen-test/electron-app
-npx tsc --noEmit
-
-# Linting (devcontainer)
-cd /workspaces/autogen-test/electron-app
-pnpm lint
 ```
 
 ## 📋 Style & Conventions
@@ -880,17 +798,6 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
   - `test_composio_adapter.py`: Composio 1.0 integration tests
   - `test_routes.py`: OAuth workflow tests
 
-### Electron App Directory (`/electron-app/`)
-
-- **electron-app/electron/main/index.ts**: Electron main process and IPC handlers
-- **electron-app/src/App.tsx**: Main React application component
-- **electron-app/src/components/**: UI components
-  - `update/index.tsx`: Auto-updater component
-  - `update/types.ts`: TypeScript type definitions
-- **electron-app/src/shared/ipc.ts**: IPC type definitions
-- **electron-app/package.json**: Node.js dependencies (electron@39.0.0)
-- **electron-app/tsconfig.json**: TypeScript configuration
-
 ### Database
 
 - **database/supabase_schema.sql**: Complete database schema for Supabase
@@ -899,9 +806,7 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
 
 ### Documentation
 
-- **PHASE_1_COMPLETION_REPORT.md**: TypeScript fixes and Electron package installation
 - **PHASE_2_COMPLETION_SUMMARY.md**: Backend integration and configuration
-- **ELECTRON_DEVCONTAINER_ISSUE.md**: DevContainer GUI limitation documentation
 - **PROJECT_STATUS.md**: Current project status and testing instructions
 - **COMPOSIO_INTEGRATION_FIX.md**: Composio 1.0 API migration guide
 - **OAUTH_TEST_REPORT.md**: OAuth workflow test documentation
@@ -911,7 +816,7 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
 
 ### Backend Environment Variables (`.env`)
 
-Required for the FastAPI backend and Gmail Labeler Electron app:
+Required for the FastAPI backend:
 
 ```bash
 # ============================================
@@ -933,7 +838,7 @@ FERNET_SECRET_KEY=your_32_byte_base64_key_here
 # Create at: https://console.cloud.google.com/apis/credentials
 GOOGLE_OAUTH_CLIENT_ID=your_client_id_here.apps.googleusercontent.com
 GOOGLE_OAUTH_CLIENT_SECRET=your_client_secret_here
-GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3005/oauth/callback
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/oauth/callback
 GOOGLE_OAUTH_SCOPE=https://www.googleapis.com/auth/gmail.modify
 
 # ============================================
@@ -985,13 +890,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Completed Work
 
-✅ **Phase 1: Critical Dependencies & Type Errors** - COMPLETED
-- Electron package installed (v39.0.0)
-- All TypeScript type definitions correct
-- All IPC handlers properly typed
-- TypeScript compilation passes without errors
-
-✅ **Phase 2: Backend Integration & Configuration** - COMPLETED
+✅ **Backend Integration & Configuration** - COMPLETED
 - Fernet encryption key generated
 - Environment variables configured
 - Supabase database schema created
@@ -1017,10 +916,6 @@ uv run pytest backend/tests/ --cov=backend/app --cov-report=html
 
 # Run specific test file
 uv run pytest backend/tests/test_composio_adapter.py -v
-
-# Run Electron tests (devcontainer - no GUI needed)
-cd /workspaces/autogen-test/electron-app
-pnpm test
 ```
 
 ### Ready for End-to-End Testing
@@ -1029,7 +924,7 @@ Before testing, you must complete these manual steps:
 
 1. **Update Supabase Service Role Key** (Go to Supabase Dashboard → Settings → API)
 2. **Execute Database Schema** (Run `database/supabase_schema.sql` in Supabase SQL Editor)
-3. **Verify Google OAuth Redirect URI** (Ensure `http://localhost:3005/oauth/callback` is authorized)
+3. **Verify Google OAuth Redirect URI** (Ensure `http://localhost:8000/oauth/callback` is authorized)
 
 See **PROJECT_STATUS.md** for detailed instructions.
 
@@ -1050,16 +945,3 @@ See **PROJECT_STATUS.md** for detailed instructions.
 - Supabase for PostgreSQL database
 - Fernet encryption for OAuth tokens at rest
 
-### Frontend Architecture
-- Electron main process handles IPC and backend communication
-- React renderer process for UI
-- Vite for fast development builds
-- TypeScript for type safety
-- All IPC channels properly typed with Pydantic-style interfaces
-
-### DevContainer Limitations
-- ⚠️ Electron app CANNOT run in devcontainer (headless environment)
-- ✅ Backend runs perfectly in devcontainer
-- ✅ TypeScript/linting/tests work in devcontainer
-- ✅ Production builds work in devcontainer
-- See **ELECTRON_DEVCONTAINER_ISSUE.md** for alternatives (Xvfb, X11 forwarding)
