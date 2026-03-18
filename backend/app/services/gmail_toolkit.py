@@ -396,8 +396,8 @@ class ComposioGmailAdapter:
         """
         # Map to AI-prefixed custom labels
         label_mapping = {
-            "Important": "AI:Important",
-            "Not Important": "AI:Not Important",
+            "Important": "TImportant",
+            "Not Important": "TNotImportant",
         }
         custom_label_name = label_mapping.get(label_name, label_name)
 
@@ -417,9 +417,9 @@ class ComposioGmailAdapter:
         # Determine opposite label to remove for clean state
         remove_label_name = None
         if label_name == "Important":
-            remove_label_name = "AI:Not Important"
+            remove_label_name = "TNotImportant"
         elif label_name == "Not Important":
-            remove_label_name = "AI:Important"
+            remove_label_name = "TImportant"
 
         # Get opposite label ID if it exists (don't create it)
         remove_label_ids = []
@@ -573,7 +573,7 @@ class GmailService:
             user_id: User's UUID
 
         Note:
-            The adapter will automatically map label names to "AI:Important" and "AI:Not Important"
+            The adapter will automatically map label names to "TImportant" and "TNotImportant"
             and resolve them to actual Gmail label IDs.
         """
         logger.debug("Applying label %s to message %s for user %s", label_id, message_id, user_id)

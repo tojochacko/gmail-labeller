@@ -12,7 +12,7 @@ from .session_repository import SessionRepository
 logger = logging.getLogger(__name__)
 
 # Only fetch emails that have not yet been classified by AI
-UNLABELED_QUERY = 'in:inbox -label:"AI:Important" -label:"AI:Not Important"'
+UNLABELED_QUERY = 'in:inbox -label:"TImportant" -label:"TNotImportant"'
 
 
 class ClassificationSessionService:
@@ -30,7 +30,7 @@ class ClassificationSessionService:
         Returns emails with live gmail_labels populated so callers can display them
         without a round-trip to the DB (where gmail_labels is not persisted).
 
-        Only fetches emails without AI:Important or AI:Not Important labels applied.
+        Only fetches emails without TImportant or TNotImportant labels applied.
 
         Args:
             user_id: User UUID

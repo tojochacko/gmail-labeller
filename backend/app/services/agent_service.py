@@ -96,6 +96,7 @@ class AgentService:
             email_id=request.email_id,
             status=status,
             result_payload=result_payload,
+            batch_run_id=request.batch_run_id,
         )
 
         return AgentRunResponse(run_id=run_id, status=status)
@@ -175,6 +176,7 @@ class AgentService:
             email_id=request.email_id,
             status=status,
             result_payload=result_payload,
+            batch_run_id=request.batch_run_id,
         )
 
         return AgentRunResponse(run_id=run_id, status=status)
@@ -245,6 +247,7 @@ class AgentService:
             email_id=request.email_id,
             status=status,
             result_payload=result_payload,
+            batch_run_id=request.batch_run_id,
         )
         return AgentRunResponse(run_id=run_id, status=status)
 
@@ -286,6 +289,7 @@ class AgentService:
             email_id=request.email_id,
             gmail_message_id=request.gmail_message_id,
             prompt=enhanced_prompt,
+            batch_run_id=request.batch_run_id,
         )
 
         # Use OpenAI if configured (and no Ollama/external runtime)

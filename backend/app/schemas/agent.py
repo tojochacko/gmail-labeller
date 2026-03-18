@@ -16,6 +16,9 @@ class AgentRunRequest(BaseModel):
     prompt: Optional[str] = Field(
         default=None, description="Optional override prompt for the agent run."
     )
+    batch_run_id: Optional[UUID] = Field(
+        default=None, description="Session ID when triggered as part of a batch classification."
+    )
 
 
 class AgentRunResponse(BaseModel):

@@ -95,6 +95,7 @@ class BatchClassifier:
                         email_id=email_id,
                         gmail_message_id=gmail_message_id,
                         prompt=prompt,
+                        batch_run_id=session_id,
                     )
                 )
 
