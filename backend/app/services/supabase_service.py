@@ -162,8 +162,9 @@ class SupabaseService:
         status: str,
         result_payload: Optional[dict] = None,
         error_message: Optional[str] = None,
+        batch_run_id: Optional[UUID] = None,
     ) -> None:
-        record = {
+        record: dict[str, Any] = {
             "id": str(run_id),
             "user_id": str(user_id),
             "email_id": str(email_id),
@@ -172,6 +173,8 @@ class SupabaseService:
             "error_message": error_message,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if batch_run_id is not None:
+            record["batch_run_id"] = str(batch_run_id)
         await self._execute("agent_runs", "upsert", record)
 
     async def fetch_agent_run(self, run_id: UUID) -> AgentRunStatusResponse | None:

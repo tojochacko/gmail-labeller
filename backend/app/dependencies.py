@@ -7,11 +7,14 @@ from fastapi import Depends
 from .config import Settings, get_settings
 from .services import (
     AgentService,
+    BatchClassifier,
+    ClassificationSessionService,
     EmailService,
     GmailService,
     GmailToolkitFactory,
     LabelService,
     PatternLearningService,
+    SessionRepository,
     SupabaseService,
 )
 
@@ -60,3 +63,25 @@ def get_pattern_service(
     supabase: SupabaseService = Depends(get_supabase_service),
 ) -> PatternLearningService:
     return PatternLearningService(supabase)
+
+
+def get_session_repository(
+    supabase: SupabaseService = Depends(get_supabase_service),
+) -> SessionRepository:
+    return SessionRepository(supabase.client)
+
+
+def get_classification_session_service(
+    session_repo: SessionRepository = Depends(get_session_repository),
+    email_service: EmailService = Depends(get_email_service),
+) -> ClassificationSessionService:
+    return ClassificationSessionService(session_repo, email_service)
+
+
+def get_batch_classifier(
+    session_repo: SessionRepository = Depends(get_session_repository),
+    supabase: SupabaseService = Depends(get_supabase_service),
+    agent_service: AgentService = Depends(get_agent_service),
+    gmail_service: GmailService = Depends(get_gmail_service),
+) -> BatchClassifier:
+    return BatchClassifier(session_repo, supabase, agent_service, gmail_service)

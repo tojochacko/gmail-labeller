@@ -1,0 +1,34 @@
+I have new flow idea in mind, considering this is an AI Agent with the intent to 
+ help a user manage their Gmail mailbox better. Here is the flow that I'm          
+proposing. Please create a change plan for the current codebase according to this. 
+                                                                                   
+Step 1 - OAuth authentication: Once the user initiates the tool via cli. Gmail     
+OAuth flow initiates and fetches the auth token. This token is stored in the       
+database(which is Supabase)                                                        
+                                                                                   
+Step 2 - Fetch Emails: This fetches 10/15/20 emails from the mailbox which are not 
+ tagged as either 'AI:Important' or 'AI:Not Important' into a task queue(this a    
+database for now).                                                                 
+                                                                                   
+Step 3 - LLM classification: The task queue created in the previous step is picked 
+ up by a sub-agent which takes each email and sends it to the LLM model for        
+classification. LLM response will classify the email as Important and              
+Not-important along with the confidence score. This tag will be applied to the     
+Gmail mailbox.                                                                     
+                                                                                   
+Step 4 - Human in the Loop(Reviewer): This can be a front-end web-based client     
+which reviews the emails which are classified by the LLM. The human user can make  
+corrections to the labels made by the LLM. These corrections are applied to the    
+Gmail mailbox. This needs to be stored as a context for future LLM runs(Suggest on 
+ how will you save this memory for future Agent runs)                              
+                                                                                   
+Step 5 - Delete the task queue and the Fetched Emails: I want to avoid the         
+database bloating as time goes. Every Fetch Email is a new state and once the      
+Human review is finished all the task queue and the fetched emails are deleted.    
+Additional Thoughts:                                                               
+1. This looks like a classification machine learning exercise. So do we need a     
+Generative AI LLM for classification?                                              
+2. I want to establish Guardrails in the AI Evaluation process. But is this        
+over-engineering for the product features?                                         
+3. How do we establish Observability and Evaluation framework for the AI           
+classification?    

@@ -23,7 +23,10 @@ from backend.app.config import get_settings
 from backend.app.schemas.agent import AgentRunRequest
 from backend.app.schemas.labels import ApplyLabelRequest
 from backend.app.services.agent_service import AgentService
+from backend.app.services.batch_classifier import BatchClassifier
+from backend.app.services.classification_session_service import ClassificationSessionService
 from backend.app.services.email_service import EmailService
+from backend.app.services.session_repository import SessionRepository
 from backend.app.services.gmail_toolkit import GmailService, GmailToolkitFactory
 from backend.app.services.label_service import LabelService
 from backend.app.services.supabase_service import SupabaseService
@@ -44,9 +47,22 @@ def load_session() -> dict | None:
     return None
 
 
-def save_session(user_id: str, email: str) -> None:
+def save_session(user_id: str, email: str, last_session_id: str | None = None) -> None:
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SESSION_FILE.write_text(json.dumps({"user_id": user_id, "email": email}))
+    data: dict = {"user_id": user_id, "email": email}
+    if last_session_id:
+        data["last_session_id"] = last_session_id
+    elif SESSION_FILE.exists():
+        existing = json.loads(SESSION_FILE.read_text())
+        if "last_session_id" in existing:
+            data["last_session_id"] = existing["last_session_id"]
+    SESSION_FILE.write_text(json.dumps(data))
+
+
+def save_last_session_id(session: dict, session_id: str) -> None:
+    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {**session, "last_session_id": session_id}
+    SESSION_FILE.write_text(json.dumps(data))
 
 
 # ── OAuth callback server ─────────────────────────────────────────────────────
@@ -109,7 +125,10 @@ def build_services():
     email_svc = EmailService(gmail, supabase, settings)
     label_svc = LabelService(gmail, supabase)
     agent_svc = AgentService(settings, supabase)
-    return settings, supabase, gmail, email_svc, label_svc, agent_svc
+    session_repo = SessionRepository(supabase.client)
+    session_svc = ClassificationSessionService(session_repo, email_svc)
+    batch_classifier = BatchClassifier(session_repo, supabase, agent_svc, gmail)
+    return settings, supabase, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -269,9 +288,80 @@ async def cmd_classify_email(
         table.add_row("[bold]Suggestion[/bold]", str(payload.get("suggestion", "–")))
         table.add_row("[bold]Confidence[/bold]", str(payload.get("confidence", "–")))
         table.add_row("[bold]Reasoning[/bold]", str(payload.get("reasoning", "–")))
-        console.print(Panel(table, title=f"AI Classification — {email.subject or email.gmail_message_id}"))
+        title = f"AI Classification — {email.subject or email.gmail_message_id}"
+        console.print(Panel(table, title=title))
     else:
         console.print(f"[yellow]Run queued (id: {run.run_id}, status: {run.status})[/yellow]")
+
+
+async def cmd_start_session(
+    session_svc: ClassificationSessionService,
+    batch_classifier: BatchClassifier,
+    session: dict,
+) -> None:
+    """Create a classification session, fetch emails, run batch classification."""
+    max_results = int(
+        Prompt.ask("How many emails?", choices=["10", "15", "20"], default="10")
+    )
+
+    with console.status("[yellow]Creating session and fetching emails…[/yellow]"):
+        session_id = await session_svc.create_session(
+            user_id=UUID(session["user_id"]),
+            max_results=max_results,
+        )
+
+    save_last_session_id(session, str(session_id))
+    console.print(f"[green]✓ Session created:[/green] {session_id}")
+
+    with console.status("[yellow]Classifying emails (this may take a moment)…[/yellow]"):
+        result = await batch_classifier.run_batch(
+            session_id=session_id,
+            user_id=UUID(session["user_id"]),
+        )
+
+    console.print(
+        f"[green]✓ Classified {result.classified}/{result.total} emails[/green]"
+        + (f"  [yellow]({result.failed} failed)[/yellow]" if result.failed else "")
+    )
+    review_url = f"http://localhost:8000/api/review/{session_id}"
+    console.print(Panel(f"[link={review_url}]{review_url}[/link]", title="Review UI"))
+    webbrowser.open(review_url)
+
+
+async def cmd_open_review(session: dict) -> None:
+    """Open the review UI for the last classification session."""
+    last_session_id = session.get("last_session_id")
+    if not last_session_id:
+        console.print(
+            "[yellow]No previous session found. Run 'Start classification session' first.[/yellow]"
+        )
+        return
+    review_url = f"http://localhost:8000/api/review/{last_session_id}"
+    console.print(f"[cyan]Opening:[/cyan] {review_url}")
+    webbrowser.open(review_url)
+
+
+async def cmd_cleanup_session(session_svc: ClassificationSessionService, session: dict) -> None:
+    """Cleanup the last classification session."""
+    last_session_id = session.get("last_session_id")
+    if not last_session_id:
+        console.print("[yellow]No previous session found.[/yellow]")
+        return
+
+    confirmed = Confirm.ask(
+        f"[yellow]Delete emails and agent runs for session {last_session_id[:8]}…?[/yellow]"
+    )
+    if not confirmed:
+        console.print("[dim]Cancelled.[/dim]")
+        return
+
+    with console.status("[yellow]Cleaning up session…[/yellow]"):
+        result = await session_svc.cleanup_session(UUID(last_session_id))
+
+    console.print(
+        f"[green]✓ Cleaned up:[/green] "
+        f"{result['emails_deleted']} emails, {result['runs_deleted']} agent runs deleted"
+    )
 
 
 # ── Main menu loop ────────────────────────────────────────────────────────────
@@ -280,7 +370,9 @@ async def cmd_classify_email(
 async def main() -> None:
     console.print(Panel("[bold cyan]Gmail Labeler — Backend CLI[/bold cyan]", expand=False))
 
-    _, supabase, gmail, email_svc, label_svc, agent_svc = build_services()
+    _, supabase, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier = (
+        build_services()
+    )
 
     session = load_session()
     if session:
@@ -294,6 +386,9 @@ async def main() -> None:
         "3": "Fetch emails",
         "4": "Label an email",
         "5": "Classify email with AI",
+        "6": "Start classification session (batch)",
+        "7": "Open review UI",
+        "8": "Cleanup last session",
         "0": "Exit",
     }
 
@@ -327,6 +422,21 @@ async def main() -> None:
         elif choice == "5":
             if session:
                 await cmd_classify_email(agent_svc, emails, session)
+            else:
+                console.print("[yellow]No session — connect first.[/yellow]")
+        elif choice == "6":
+            if session:
+                await cmd_start_session(session_svc, batch_classifier, session)
+            else:
+                console.print("[yellow]No session — connect first.[/yellow]")
+        elif choice == "7":
+            if session:
+                await cmd_open_review(session)
+            else:
+                console.print("[yellow]No session — connect first.[/yellow]")
+        elif choice == "8":
+            if session:
+                await cmd_cleanup_session(session_svc, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
 

@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     ollama_host: str = Field(default="http://localhost:11434", alias="OLLAMA_HOST")
     ollama_model: str = Field(default="gemma3", alias="OLLAMA_MODEL")
 
+    # OpenAI Configuration
+    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+
     class Config:
         env_file = "config/.env"
         case_sensitive = True

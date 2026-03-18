@@ -33,16 +33,26 @@ class AgentService:
         self._mock_runs: dict[UUID, dict] = {}
 
     def _is_mock_mode(self) -> bool:
-        """Check if running in mock mode (no agent runtime or Ollama configured)."""
+        """Check if running in mock mode (no agent runtime, Ollama, or OpenAI configured)."""
         if self._settings.agent_runtime_base_url is not None:
             return False
         if self._settings.ollama_enabled:
+            return False
+        if self._settings.openai_api_key:
             return False
         return True
 
     def _is_ollama_mode(self) -> bool:
         """Check if Ollama local LLM is enabled."""
         return self._settings.ollama_enabled and not self._settings.agent_runtime_base_url
+
+    def _is_openai_mode(self) -> bool:
+        """Check if OpenAI is the active classification mode."""
+        return (
+            bool(self._settings.openai_api_key)
+            and not self._settings.ollama_enabled
+            and self._settings.agent_runtime_base_url is None
+        )
 
     async def _mock_trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
         """Mock agent run for development/testing without external runtime."""
@@ -119,7 +129,8 @@ class AgentService:
             prompt = (
                 "Analyze this email and classify it as either 'Important' or 'Not Important'.\n\n"
                 "Respond in JSON format:\n"
-                '{"suggestion": "Important|Not Important", "confidence": 0.0-1.0, "reasoning": "explanation"}'
+                '{"suggestion": "Important|Not Important", "confidence": 0.0-1.0,'
+                ' "reasoning": "explanation"}'
             )
 
         logger.info(
@@ -199,6 +210,83 @@ class AgentService:
 
         return AgentRunResponse(run_id=run_id, status=status)
 
+    async def _openai_trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
+        """Trigger agent run using OpenAI gpt-4o-mini for email classification."""
+        import openai
+
+        run_id = uuid4()
+
+        prompt = request.prompt or ""
+        if not prompt:
+            prompt = (
+                "Analyze this email and classify it as either 'Important' or 'Not Important'.\n\n"
+                "Respond in JSON format:\n"
+                '{"suggestion": "Important|Not Important", "confidence": 0.0-1.0,'
+                ' "reasoning": "..."}'
+            )
+
+        logger.info(
+            "Using OpenAI (%s) for email %s user %s",
+            self._settings.openai_model,
+            request.email_id,
+            request.user_id,
+        )
+
+        try:
+            client = openai.AsyncOpenAI(api_key=self._settings.openai_api_key)
+            response = await client.chat.completions.create(
+                model=self._settings.openai_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an email classifier. Respond only with valid JSON: "
+                            '{"suggestion": "Important|Not Important", '
+                            '"confidence": <float 0-1>, "reasoning": "<brief reason>"}'
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=150,
+            )
+            result_text = response.choices[0].message.content or ""
+            result = json.loads(result_text)
+            suggestion = result.get("suggestion", "Important")
+            confidence = float(result.get("confidence", 0.8))
+            reasoning = result.get("reasoning", "Classified by OpenAI")
+
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.warning(f"Failed to parse OpenAI response: {e}, falling back to mock")
+            return await self._mock_trigger_agent_run(request)
+        except Exception as e:
+            logger.error(f"OpenAI request failed: {e}, falling back to mock")
+            return await self._mock_trigger_agent_run(request)
+
+        result_payload = {
+            "suggestion": suggestion,
+            "confidence": confidence,
+            "reasoning": reasoning,
+        }
+
+        status = "completed"
+        await self._supabase.record_agent_run(
+            run_id=run_id,
+            user_id=request.user_id,
+            email_id=request.email_id,
+            status=status,
+            result_payload=result_payload,
+        )
+        await self._supabase.update_email_with_new_schema(
+            email_id=request.email_id,
+            label=str(suggestion),
+            label_confidence=confidence,
+            label_source="agent",
+            labeled_at=datetime.now(timezone.utc),
+            last_updated_by="agent",
+        )
+        return AgentRunResponse(run_id=run_id, status=status)
+
     async def _mock_get_agent_run(self, run_id: UUID) -> AgentRunStatusResponse | None:
         """Get mock agent run status."""
         # Check in-memory mock storage
@@ -238,6 +326,10 @@ class AgentService:
             gmail_message_id=request.gmail_message_id,
             prompt=enhanced_prompt,
         )
+
+        # Use OpenAI if configured (and no Ollama/external runtime)
+        if self._is_openai_mode():
+            return await self._openai_trigger_agent_run(enhanced_request)
 
         # Use Ollama if enabled
         if self._is_ollama_mode():
@@ -284,8 +376,8 @@ class AgentService:
         return AgentRunResponse(run_id=run_id, status=status)
 
     async def get_agent_run(self, run_id: UUID) -> AgentRunStatusResponse | None:
-        # Use mock/Ollama mode if agent runtime is not configured
-        if self._is_mock_mode() or self._is_ollama_mode():
+        # Use mock/Ollama/OpenAI mode if agent runtime is not configured
+        if self._is_mock_mode() or self._is_ollama_mode() or self._is_openai_mode():
             return await self._mock_get_agent_run(run_id)
 
         logger.debug("Fetching agent run %s", run_id)
