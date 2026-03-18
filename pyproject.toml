@@ -62,4 +62,5 @@ strict_equality = true
 [dependency-groups]
 dev = [
     "mypy>=1.18.2",
+    "pytest-asyncio>=1.2.0",
 ]

@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 import logging
 
+from ..config import Settings
 from ..schemas.email import EmailItem
 from ..schemas.oauth import GmailTokens
 from .auto_label_engine import AutoLabelEngine
@@ -26,11 +27,22 @@ class EmailService:
         self,
         gmail_service: GmailService,
         supabase: SupabaseService,
+        settings: Settings | None = None,
         auto_label_engine: AutoLabelEngine | None = None,
     ) -> None:
         self._gmail_service = gmail_service
         self._supabase = supabase
+        self._settings = settings
         self._auto_label_engine = auto_label_engine or AutoLabelEngine(supabase)
+
+    def _llm_absent(self) -> bool:
+        """Return True when no LLM backend is configured."""
+        if self._settings is None:
+            return True
+        return (
+            self._settings.agent_runtime_base_url is None
+            and not self._settings.ollama_enabled
+        )
 
     async def fetch_latest_emails(
         self, user_id: UUID, max_results: int = 20, query: str | None = None
@@ -108,11 +120,15 @@ class EmailService:
                     f"from {item.sender_email}"
                 )
 
-                # Try auto-labeling for new emails only
+                # Try auto-labeling for new emails only when LLM is not configured
                 try:
-                    suggestion = await self._auto_label_engine.suggest_label(
-                        email=item,
-                        user_id=user_id,
+                    suggestion = (
+                        await self._auto_label_engine.suggest_label(
+                            email=item,
+                            user_id=user_id,
+                        )
+                        if self._llm_absent()
+                        else None
                     )
 
                     if suggestion:

@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # Optional telemetry
     sentry_dsn: Optional[str] = Field(default=None, alias="SENTRY_DSN")
 
+    # Ollama Local LLM Configuration
+    ollama_enabled: bool = Field(default=False, alias="OLLAMA_ENABLED")
+    ollama_host: str = Field(default="http://localhost:11434", alias="OLLAMA_HOST")
+    ollama_model: str = Field(default="gemma3", alias="OLLAMA_MODEL")
+
     class Config:
         env_file = "config/.env"
         case_sensitive = True

@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import logging
+import json
 
 from ..config import Settings
 from ..schemas.agent import AgentRunRequest, AgentRunResponse, AgentRunStatusResponse
@@ -32,8 +33,16 @@ class AgentService:
         self._mock_runs: dict[UUID, dict] = {}
 
     def _is_mock_mode(self) -> bool:
-        """Check if running in mock mode (no agent runtime configured)."""
-        return self._settings.agent_runtime_base_url is None
+        """Check if running in mock mode (no agent runtime or Ollama configured)."""
+        if self._settings.agent_runtime_base_url is not None:
+            return False
+        if self._settings.ollama_enabled:
+            return False
+        return True
+
+    def _is_ollama_mode(self) -> bool:
+        """Check if Ollama local LLM is enabled."""
+        return self._settings.ollama_enabled and not self._settings.agent_runtime_base_url
 
     async def _mock_trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
         """Mock agent run for development/testing without external runtime."""
@@ -99,6 +108,97 @@ class AgentService:
 
         return AgentRunResponse(run_id=run_id, status=status)
 
+    async def _ollama_trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
+        """Trigger agent run using local Ollama LLM."""
+        run_id = uuid4()
+
+        # Build prompt for email classification
+        prompt = request.prompt or ""
+        if not prompt:
+            # Default classification prompt
+            prompt = (
+                "Analyze this email and classify it as either 'Important' or 'Not Important'.\n\n"
+                "Respond in JSON format:\n"
+                '{"suggestion": "Important|Not Important", "confidence": 0.0-1.0, "reasoning": "explanation"}'
+            )
+
+        logger.info(
+            "Using Ollama (%s) for email %s user %s",
+            self._settings.ollama_model,
+            request.email_id,
+            request.user_id,
+        )
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self._settings.ollama_host}/api/generate",
+                    json={
+                        "model": self._settings.ollama_model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "format": "json",
+                    },
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                # Parse the response
+                try:
+                    result_text = data.get("response", "")
+                    result = json.loads(result_text)
+                    suggestion = result.get("suggestion", "Important")
+                    confidence = float(result.get("confidence", 0.7))
+                    reasoning = result.get("reasoning", "Classified by local LLM")
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"Failed to parse Ollama response: {e}, raw: {result_text}")
+                    # Fallback to simple parsing
+                    if "not important" in result_text.lower():
+                        suggestion = "Not Important"
+                        confidence = 0.6
+                    else:
+                        suggestion = "Important"
+                        confidence = 0.7
+                    reasoning = "Parsed from LLM response"
+
+                result_payload = {
+                    "suggestion": suggestion,
+                    "confidence": confidence,
+                    "reasoning": reasoning,
+                }
+
+        except Exception as e:
+            logger.error(f"Ollama request failed: {e}, falling back to mock")
+            # Fallback to mock mode if Ollama fails
+            return await self._mock_trigger_agent_run(request)
+
+        status = "completed"
+
+        # Store run
+        await self._supabase.record_agent_run(
+            run_id=run_id,
+            user_id=request.user_id,
+            email_id=request.email_id,
+            status=status,
+            result_payload=result_payload,
+        )
+
+        # Update email with agent suggestion
+        if result_payload and "suggestion" in result_payload:
+            suggestion = result_payload["suggestion"]
+            logger.info(f"Updating email {request.email_id} with Ollama suggestion: {suggestion}")
+            await self._supabase.update_email_with_new_schema(
+                email_id=request.email_id,
+                label=str(suggestion),
+                label_confidence=result_payload.get("confidence", 0.7),
+                label_source="agent",
+                labeled_at=datetime.now(timezone.utc),
+                last_updated_by="agent",
+            )
+
+        return AgentRunResponse(run_id=run_id, status=status)
+
     async def _mock_get_agent_run(self, run_id: UUID) -> AgentRunStatusResponse | None:
         """Get mock agent run status."""
         # Check in-memory mock storage
@@ -138,6 +238,10 @@ class AgentService:
             gmail_message_id=request.gmail_message_id,
             prompt=enhanced_prompt,
         )
+
+        # Use Ollama if enabled
+        if self._is_ollama_mode():
+            return await self._ollama_trigger_agent_run(enhanced_request)
 
         # Use mock mode if agent runtime is not configured
         if self._is_mock_mode():
@@ -180,8 +284,8 @@ class AgentService:
         return AgentRunResponse(run_id=run_id, status=status)
 
     async def get_agent_run(self, run_id: UUID) -> AgentRunStatusResponse | None:
-        # Use mock mode if agent runtime is not configured
-        if self._is_mock_mode():
+        # Use mock/Ollama mode if agent runtime is not configured
+        if self._is_mock_mode() or self._is_ollama_mode():
             return await self._mock_get_agent_run(run_id)
 
         logger.debug("Fetching agent run %s", run_id)

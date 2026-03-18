@@ -37,8 +37,9 @@ def get_gmail_service(settings: Settings = Depends(get_settings)) -> GmailServic
 def get_email_service(
     gmail_service: GmailService = Depends(get_gmail_service),
     supabase: SupabaseService = Depends(get_supabase_service),
+    settings: Settings = Depends(get_settings),
 ) -> EmailService:
-    return EmailService(gmail_service, supabase)
+    return EmailService(gmail_service, supabase, settings)
 
 
 def get_label_service(
