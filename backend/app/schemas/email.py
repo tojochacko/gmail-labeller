@@ -38,6 +38,9 @@ class EmailItem(BaseModel):
     processed_at: Optional[datetime] = Field(
         default=None, description="Timestamp of the last agent processing run."
     )
+    gmail_labels: Optional[list[str]] = Field(
+        default=None, description="Gmail label IDs from the live fetch (not persisted)."
+    )
 
 
 class EmailListResponse(BaseModel):

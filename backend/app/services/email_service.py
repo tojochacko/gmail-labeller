@@ -63,6 +63,7 @@ class EmailService:
             await self._supabase.upsert_email(user_id, item)
             items.append(item)
 
+        items.sort(key=lambda e: e.received_at, reverse=True)
         logger.info(
             f"✅ FETCH COMPLETE: {len(items)} emails ({new_count} new, {existing_count} existing)"
         )
@@ -133,6 +134,15 @@ class EmailService:
                 f"Using UUID fallback: {email_id}"
             )
 
+        gmail_labels = (
+            message.get("labelIds")
+            or message.get("label_ids")
+            or message.get("labels")
+            or None
+        )
+        if isinstance(gmail_labels, list):
+            gmail_labels = [str(lbl) for lbl in gmail_labels] or None
+
         return EmailItem(
             id=email_id,
             gmail_message_id=gmail_msg_id,
@@ -143,6 +153,7 @@ class EmailService:
             sender_domain=sender_domain,
             received_at=received_at,
             processed_at=None,
+            gmail_labels=gmail_labels,
         )
 
     def _normalize_headers(self, headers: Sequence[dict]) -> dict[str, str]:

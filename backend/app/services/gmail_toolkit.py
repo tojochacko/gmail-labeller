@@ -540,6 +540,22 @@ class GmailService:
             query=query,
         )
 
+    async def list_labels(self, tokens: GmailTokens, user_id: str) -> list[dict]:
+        """List all Gmail labels for the user.
+
+        Args:
+            tokens: Gmail OAuth tokens
+            user_id: User's UUID
+
+        Returns:
+            List of label dicts with 'id' and 'name' fields
+        """
+        return await self._adapter.list_labels(
+            access_token=tokens.access_token.get_secret_value(),
+            refresh_token=tokens.refresh_token.get_secret_value(),
+            user_id=user_id,
+        )
+
     async def apply_label(
         self,
         message_id: str,

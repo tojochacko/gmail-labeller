@@ -22,8 +22,13 @@ class ClassificationSessionService:
         self._repo = session_repo
         self._email_service = email_service
 
-    async def create_session(self, user_id: UUID, max_results: int = 10) -> UUID:
-        """Create a session, fetch unlabeled emails into it, and return the session ID.
+    async def create_session(
+        self, user_id: UUID, max_results: int = 10
+    ) -> tuple[UUID, list[EmailItem]]:
+        """Create a session, fetch unlabeled emails into it, and return session ID + emails.
+
+        Returns emails with live gmail_labels populated so callers can display them
+        without a round-trip to the DB (where gmail_labels is not persisted).
 
         Only fetches emails without AI:Important or AI:Not Important labels applied.
 
@@ -32,7 +37,7 @@ class ClassificationSessionService:
             max_results: Max emails to fetch
 
         Returns:
-            New session UUID
+            Tuple of (session UUID, list of EmailItem with live gmail_labels)
         """
         session_id = await self._repo.create_session(user_id)
         logger.info("Created classification session %s for user %s", session_id, user_id)
@@ -51,7 +56,7 @@ class ClassificationSessionService:
             session_id, status="pending", email_count=len(emails)
         )
         logger.info("Session %s linked to %d emails", session_id, len(emails))
-        return session_id
+        return session_id, emails
 
     async def get_session_review_items(self, session_id: UUID) -> list[dict]:
         """Return emails paired with their AI suggestion from agent_runs.

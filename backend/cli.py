@@ -48,6 +48,59 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("supabase").setLevel(logging.WARNING)
 
 SESSION_FILE = Path.home() / ".gmail-labeler" / "session.json"
+
+# Map Gmail system label IDs to short display names; anything else is shown as-is.
+_SYSTEM_LABEL_MAP = {
+    "INBOX": None,
+    "UNREAD": None,
+    "SENT": None,
+    "TRASH": None,
+    "SPAM": None,
+    "DRAFT": None,
+    "IMPORTANT": None,
+    "STARRED": "★",
+    "CATEGORY_PERSONAL": "Personal",
+    "CATEGORY_PROMOTIONS": "Promotions",
+    "CATEGORY_SOCIAL": "Social",
+    "CATEGORY_UPDATES": "Updates",
+    "CATEGORY_FORUMS": "Forums",
+}
+
+
+def _format_gmail_label(
+    labels: list[str] | None,
+    custom_label_map: dict[str, str] | None = None,
+) -> str:
+    """Return a short display string for a list of Gmail label IDs."""
+    if not labels:
+        return "–"
+    parts: list[str] = []
+    for lbl in labels:
+        if lbl in _SYSTEM_LABEL_MAP:
+            mapped = _SYSTEM_LABEL_MAP[lbl]
+            if mapped:
+                parts.append(mapped)
+        elif custom_label_map and lbl in custom_label_map:
+            parts.append(custom_label_map[lbl])
+        else:
+            parts.append(lbl)
+    return ", ".join(parts) if parts else "–"
+
+
+async def _build_custom_label_map(
+    gmail: GmailService, supabase: SupabaseService, user_id: UUID
+) -> dict[str, str]:
+    """Return {label_id: label_name} for all user-defined (non-system) Gmail labels."""
+    tokens = await supabase.fetch_gmail_tokens(user_id)
+    if not tokens:
+        return {}
+    labels = await gmail.list_labels(tokens=tokens, user_id=str(user_id))
+    return {
+        lbl["id"]: lbl["name"]
+        for lbl in labels
+        if isinstance(lbl, dict) and "id" in lbl and "name" in lbl
+        and lbl["id"] not in _SYSTEM_LABEL_MAP
+    }
 OAUTH_CALLBACK_PORT = 3005
 OAUTH_CALLBACK_PATH = "/oauth/callback"
 
@@ -202,21 +255,26 @@ async def cmd_status(supabase: SupabaseService, session: dict) -> None:
         console.print("[red]✗ No Gmail connection found. Run 'Connect Gmail' first.[/red]")
 
 
-async def cmd_fetch_emails(email_svc: EmailService, session: dict) -> list:
+async def cmd_fetch_emails(
+    email_svc: EmailService, gmail: GmailService, supabase: SupabaseService, session: dict
+) -> list:
     max_results = int(Prompt.ask("Max emails to fetch", default="20"))
     query = Prompt.ask("Gmail query filter (leave blank for inbox)", default="in:inbox") or None
+    user_id = UUID(session["user_id"])
 
-    with console.status("[yellow]Fetching emails…[/yellow]"):
-        emails = await email_svc.fetch_latest_emails(
-            user_id=UUID(session["user_id"]),
-            max_results=max_results,
-            query=query,
+    with console.status("[yellow]Fetching emails and labels…[/yellow]"):
+        emails, custom_label_map = await asyncio.gather(
+            email_svc.fetch_latest_emails(
+                user_id=user_id, max_results=max_results, query=query
+            ),
+            _build_custom_label_map(gmail, supabase, user_id),
         )
 
     table = Table(title=f"{len(emails)} emails", box=box.ROUNDED, show_lines=False)
     table.add_column("#", style="dim", width=3)
     table.add_column("Subject", max_width=55)
     table.add_column("From", max_width=32)
+    table.add_column("Label", max_width=18)
     table.add_column("Gmail ID", style="dim", max_width=18)
 
     for i, e in enumerate(emails, 1):
@@ -224,6 +282,7 @@ async def cmd_fetch_emails(email_svc: EmailService, session: dict) -> list:
             str(i),
             e.subject or "(no subject)",
             e.sender_email or "–",
+            _format_gmail_label(e.gmail_labels, custom_label_map),
             e.gmail_message_id,
         )
 
@@ -300,30 +359,38 @@ async def cmd_classify_email(
 async def cmd_start_session(
     session_svc: ClassificationSessionService,
     batch_classifier: BatchClassifier,
+    gmail: GmailService,
+    supabase: SupabaseService,
     session: dict,
 ) -> None:
     """Create a classification session, fetch emails, run batch classification."""
     max_results = int(
         Prompt.ask("How many emails?", choices=["10", "15", "20"], default="10")
     )
+    user_id = UUID(session["user_id"])
 
     with console.status("[yellow]Creating session and fetching emails…[/yellow]"):
-        session_id = await session_svc.create_session(
-            user_id=UUID(session["user_id"]),
-            max_results=max_results,
+        (session_id, queued_emails), custom_label_map = await asyncio.gather(
+            session_svc.create_session(user_id=user_id, max_results=max_results),
+            _build_custom_label_map(gmail, supabase, user_id),
         )
 
     save_last_session_id(session, str(session_id))
     console.print(f"[green]✓ Session created:[/green] {session_id}")
 
-    # Show fetched emails before classification
-    queued_emails = await session_svc.get_session_emails(session_id)
+    # queued_emails already has live gmail_labels from the fetch above
     table = Table(title=f"{len(queued_emails)} emails queued for classification", box=box.ROUNDED)
     table.add_column("#", style="dim", width=3)
     table.add_column("Subject", max_width=55)
     table.add_column("From", max_width=32)
+    table.add_column("Label", max_width=18)
     for i, e in enumerate(queued_emails, 1):
-        table.add_row(str(i), e.subject or "(no subject)", e.sender_email or "–")
+        table.add_row(
+            str(i),
+            e.subject or "(no subject)",
+            e.sender_email or "–",
+            _format_gmail_label(e.gmail_labels, custom_label_map),
+        )
     console.print(table)
 
     if not Confirm.ask("[cyan]Proceed with LLM classification?[/cyan]", default=True):
@@ -428,7 +495,7 @@ async def main() -> None:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "3":
             if session:
-                emails = await cmd_fetch_emails(email_svc, session)
+                emails = await cmd_fetch_emails(email_svc, gmail, supabase, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "4":
@@ -443,7 +510,7 @@ async def main() -> None:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "6":
             if session:
-                await cmd_start_session(session_svc, batch_classifier, session)
+                await cmd_start_session(session_svc, batch_classifier, gmail, supabase, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "7":

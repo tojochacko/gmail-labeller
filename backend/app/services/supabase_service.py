@@ -88,7 +88,8 @@ class SupabaseService:
 
         try:
             # Use mode='json' to serialize UUIDs and datetimes to JSON-compatible strings
-            record = payload.model_dump(mode="json")
+            # Exclude gmail_labels — it's a transient field not persisted in the DB
+            record = payload.model_dump(mode="json", exclude={"gmail_labels"})
             record["user_id"] = str(user_id)
 
             logger.debug(f"Upsert record keys: {list(record.keys())}")
