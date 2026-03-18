@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from uuid import UUID
@@ -60,7 +61,7 @@ class BatchClassifier:
         """
         await self._repo.update_session_status(session_id, status="classifying")
 
-        emails = await self._repo.fetch_unlabeled_session_emails(session_id)
+        emails = await self._repo.fetch_session_emails(session_id)
         total = len(emails)
         classified = 0
         failed = 0
@@ -86,6 +87,7 @@ class BatchClassifier:
 
                 # Build classification prompt from email fields
                 prompt = _build_classification_prompt(email_row)
+                logger.info("Prompt for '%s':\n%s", subject[:60], prompt)
 
                 run = await self._agent_service.trigger_agent_run(
                     AgentRunRequest(
@@ -101,6 +103,11 @@ class BatchClassifier:
                 suggestion = None
                 if result and result.result_payload:
                     suggestion = result.result_payload.get("suggestion")
+                    logger.info(
+                        "LLM response for '%s': %s",
+                        subject[:60],
+                        result.result_payload,
+                    )
 
                 # Apply Gmail label if we have tokens and a suggestion
                 if tokens and suggestion in ("Important", "Not Important"):
@@ -125,6 +132,10 @@ class BatchClassifier:
             except Exception as e:
                 failed += 1
                 logger.error("Failed to classify email %s: %s", email_id_str, e)
+
+            # Pause between LLM calls to avoid rate limiting
+            if classified + failed < total:
+                await asyncio.sleep(15)
 
         await self._repo.update_session_status(session_id, status="awaiting_review")
         logger.info(

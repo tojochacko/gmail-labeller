@@ -98,24 +98,6 @@ class AgentService:
             result_payload=result_payload,
         )
 
-        # Update email with agent suggestion using new consolidated schema
-        if result_payload and "suggestion" in result_payload:
-            suggestion = result_payload["suggestion"]
-            logger.info(f"Updating email {request.email_id} with suggestion: {suggestion}")
-            await self._supabase.update_email_with_new_schema(
-                email_id=request.email_id,
-                label=str(suggestion),
-                label_confidence=0.5,  # Agent suggestions get medium confidence
-                label_source="agent",
-                labeled_at=datetime.now(timezone.utc),
-                last_updated_by="agent",
-            )
-            logger.info(f"Successfully updated email {request.email_id} with suggestion")
-        else:
-            logger.warning(
-                f"No suggestion in result_payload for email {request.email_id}: {result_payload}"
-            )
-
         return AgentRunResponse(run_id=run_id, status=status)
 
     async def _ollama_trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
@@ -195,19 +177,6 @@ class AgentService:
             result_payload=result_payload,
         )
 
-        # Update email with agent suggestion
-        if result_payload and "suggestion" in result_payload:
-            suggestion = result_payload["suggestion"]
-            logger.info(f"Updating email {request.email_id} with Ollama suggestion: {suggestion}")
-            await self._supabase.update_email_with_new_schema(
-                email_id=request.email_id,
-                label=str(suggestion),
-                label_confidence=result_payload.get("confidence", 0.7),
-                label_source="agent",
-                labeled_at=datetime.now(timezone.utc),
-                last_updated_by="agent",
-            )
-
         return AgentRunResponse(run_id=run_id, status=status)
 
     async def _openai_trigger_agent_run(self, request: AgentRunRequest) -> AgentRunResponse:
@@ -276,14 +245,6 @@ class AgentService:
             email_id=request.email_id,
             status=status,
             result_payload=result_payload,
-        )
-        await self._supabase.update_email_with_new_schema(
-            email_id=request.email_id,
-            label=str(suggestion),
-            label_confidence=confidence,
-            label_source="agent",
-            labeled_at=datetime.now(timezone.utc),
-            last_updated_by="agent",
         )
         return AgentRunResponse(run_id=run_id, status=status)
 
@@ -361,17 +322,6 @@ class AgentService:
             status=status,
             result_payload=result_payload,
         )
-
-        # Update email with agent suggestion using new consolidated schema
-        if result_payload and "suggestion" in result_payload:
-            await self._supabase.update_email_with_new_schema(
-                email_id=request.email_id,
-                label=result_payload["suggestion"],
-                label_confidence=0.5,  # Agent suggestions get medium confidence
-                label_source="agent",
-                labeled_at=datetime.now(timezone.utc),
-                last_updated_by="agent",
-            )
 
         return AgentRunResponse(run_id=run_id, status=status)
 

@@ -437,14 +437,15 @@ class ComposioGmailAdapter:
                     )
                     break
 
+        # Always remove INBOX so classified emails leave the inbox
+        remove_label_ids.append("INBOX")
+
         # Build API arguments
         arguments = {
             "message_id": message_id,
             "add_label_ids": [label_id],
+            "remove_label_ids": remove_label_ids,
         }
-
-        if remove_label_ids:
-            arguments["remove_label_ids"] = remove_label_ids
 
         logger.debug(f"Executing GMAIL_ADD_LABEL_TO_EMAIL with arguments: {arguments}")
 

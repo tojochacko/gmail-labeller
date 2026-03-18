@@ -214,7 +214,7 @@ async def test_apply_label(mock_composio_client):
     assert third_call[1]["arguments"]["message_id"] == "msg-123"
     assert third_call[1]["arguments"]["add_label_ids"] == ["label-ai-important-123"]
     # Should try to remove opposite label
-    assert third_call[1]["arguments"]["remove_label_ids"] == ["label-ai-not-important-456"]
+    assert third_call[1]["arguments"]["remove_label_ids"] == ["label-ai-not-important-456", "INBOX"]
     assert third_call[1]["user_id"] == "user-abc"
 
 

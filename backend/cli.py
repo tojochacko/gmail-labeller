@@ -13,8 +13,11 @@ from threading import Event, Thread
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
+import logging
+
 from rich import box
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -32,6 +35,17 @@ from backend.app.services.label_service import LabelService
 from backend.app.services.supabase_service import SupabaseService
 
 console = Console()
+
+# TODO(deployment): set level=logging.WARNING to silence LLM response logs in production
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[RichHandler(console=console, show_path=False, markup=True)],
+)
+# Keep noisy libraries quiet — we only want our own service logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("supabase").setLevel(logging.WARNING)
 
 SESSION_FILE = Path.home() / ".gmail-labeler" / "session.json"
 OAUTH_CALLBACK_PORT = 3005
@@ -201,26 +215,15 @@ async def cmd_fetch_emails(email_svc: EmailService, session: dict) -> list:
 
     table = Table(title=f"{len(emails)} emails", box=box.ROUNDED, show_lines=False)
     table.add_column("#", style="dim", width=3)
-    table.add_column("Subject", max_width=45)
-    table.add_column("From", max_width=28)
-    table.add_column("Label", width=14)
-    table.add_column("Source", width=8)
-    table.add_column("Confidence", width=10, justify="right")
+    table.add_column("Subject", max_width=55)
+    table.add_column("From", max_width=32)
     table.add_column("Gmail ID", style="dim", max_width=18)
 
     for i, e in enumerate(emails, 1):
-        label_style = (
-            "green" if e.label == "Important"
-            else "yellow" if e.label == "Not Important"
-            else "dim"
-        )
         table.add_row(
             str(i),
             e.subject or "(no subject)",
             e.sender_email or "–",
-            f"[{label_style}]{e.label or 'Uncategorized'}[/{label_style}]",
-            e.label_source or "–",
-            f"{e.label_confidence:.2f}" if e.label_confidence is not None else "–",
             e.gmail_message_id,
         )
 
@@ -312,6 +315,20 @@ async def cmd_start_session(
 
     save_last_session_id(session, str(session_id))
     console.print(f"[green]✓ Session created:[/green] {session_id}")
+
+    # Show fetched emails before classification
+    queued_emails = await session_svc.get_session_emails(session_id)
+    table = Table(title=f"{len(queued_emails)} emails queued for classification", box=box.ROUNDED)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Subject", max_width=55)
+    table.add_column("From", max_width=32)
+    for i, e in enumerate(queued_emails, 1):
+        table.add_row(str(i), e.subject or "(no subject)", e.sender_email or "–")
+    console.print(table)
+
+    if not Confirm.ask("[cyan]Proceed with LLM classification?[/cyan]", default=True):
+        console.print("[dim]Cancelled. Session saved — use option 8 to clean up.[/dim]")
+        return
 
     with console.status("[yellow]Classifying emails (this may take a moment)…[/yellow]"):
         result = await batch_classifier.run_batch(

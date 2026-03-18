@@ -71,22 +71,21 @@ class SessionRepository:
         )
         return response.data or []
 
-    async def fetch_unlabeled_session_emails(self, session_id: UUID) -> list[dict]:
-        """Fetch emails in a session that have no label yet."""
+    async def fetch_session_agent_runs(self, session_id: UUID) -> list[dict]:
+        """Fetch agent run results for all emails in a session."""
         try:
             return await asyncio.to_thread(
-                self._fetch_unlabeled_session_emails_sync, str(session_id)
+                self._fetch_session_agent_runs_sync, str(session_id)
             )
         except Exception as e:
-            logger.error("Error fetching unlabeled session emails: %s", e)
+            logger.error("Error fetching session agent runs: %s", e)
             return []
 
-    def _fetch_unlabeled_session_emails_sync(self, session_id: str) -> list[dict]:
+    def _fetch_session_agent_runs_sync(self, session_id: str) -> list[dict]:
         response = (
-            self._client.table("emails")
-            .select("*")
-            .eq("session_id", session_id)
-            .is_("label", "null")
+            self._client.table("agent_runs")
+            .select("email_id,result_payload")
+            .eq("batch_run_id", session_id)
             .execute()
         )
         return response.data or []

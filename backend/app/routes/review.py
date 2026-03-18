@@ -45,27 +45,27 @@ async def review_page(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    emails = await session_svc.get_session_emails(session_id)
+    review_items = await session_svc.get_session_review_items(session_id)
 
     rows_html = ""
-    for email in emails:
-        label = email.label or "Uncategorized"
+    for item in review_items:
+        email = item["email"]
+        suggestion = item["suggestion"] or "Uncategorized"
+        confidence = item["confidence"]
         label_color = (
-            "#22c55e" if label == "Important"
-            else "#f59e0b" if label == "Not Important"
+            "#22c55e" if suggestion == "Important"
+            else "#f59e0b" if suggestion == "Not Important"
             else "#6b7280"
         )
-        confidence = (
-            f"{email.label_confidence:.0%}" if email.label_confidence is not None else "–"
-        )
+        confidence_str = f"{confidence:.0%}" if confidence is not None else "–"
         subject_escaped = (email.subject or "(no subject)").replace('"', "&quot;")
         sender_escaped = (email.sender_email or "–").replace('"', "&quot;")
         rows_html += f"""
         <tr data-email-id="{email.id}" data-gmail-id="{email.gmail_message_id}">
           <td title="{subject_escaped}">{(email.subject or "(no subject)")[:60]}</td>
           <td title="{sender_escaped}">{(email.sender_email or "–")[:35]}</td>
-          <td class="label-cell" style="color:{label_color};font-weight:600">{label}</td>
-          <td class="conf-cell">{confidence}</td>
+          <td class="label-cell" style="color:{label_color};font-weight:600">{suggestion}</td>
+          <td class="conf-cell">{confidence_str}</td>
           <td class="actions">
             <button class="btn-correct" data-new-label="Important"
               onclick="correct(this,'Important')">✓ Important</button>
@@ -115,7 +115,7 @@ async def review_page(
 </head>
 <body>
   <h1>Email Review — Session <code>{session_id_str[:8]}…</code></h1>
-  <p class="meta">{len(emails)} emails · Correct any misclassifications, then click Done.</p>
+  <p class="meta">{len(review_items)} emails · Correct any misclassifications, then click Done.</p>
   <table>
     <thead>
       <tr>

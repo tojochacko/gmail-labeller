@@ -24,10 +24,6 @@ class CreateSessionRequest(BaseModel):
 
     user_id: UUID
     max_results: int = Field(default=10, ge=1, le=50)
-    query: str = Field(
-        default='in:inbox -label:"AI:Important" -label:"AI:Not Important"',
-        description="Gmail query to filter emails for this session.",
-    )
 
 
 class CreateSessionResponse(BaseModel):
@@ -67,7 +63,6 @@ async def create_session(
         session_id = await session_svc.create_session(
             user_id=request.user_id,
             max_results=request.max_results,
-            query=request.query,
         )
         session = await session_svc.get_session(session_id)
         email_count = session.get("email_count", 0) if session else 0

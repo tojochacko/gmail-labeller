@@ -11,6 +11,7 @@ from .session_repository import SessionRepository
 
 logger = logging.getLogger(__name__)
 
+# Only fetch emails that have not yet been classified by AI
 UNLABELED_QUERY = 'in:inbox -label:"AI:Important" -label:"AI:Not Important"'
 
 
@@ -21,29 +22,26 @@ class ClassificationSessionService:
         self._repo = session_repo
         self._email_service = email_service
 
-    async def create_session(
-        self,
-        user_id: UUID,
-        max_results: int = 10,
-        query: str = UNLABELED_QUERY,
-    ) -> UUID:
+    async def create_session(self, user_id: UUID, max_results: int = 10) -> UUID:
         """Create a session, fetch unlabeled emails into it, and return the session ID.
+
+        Only fetches emails without AI:Important or AI:Not Important labels applied.
 
         Args:
             user_id: User UUID
             max_results: Max emails to fetch
-            query: Gmail query to find unlabeled emails
 
         Returns:
             New session UUID
         """
         session_id = await self._repo.create_session(user_id)
         logger.info("Created classification session %s for user %s", session_id, user_id)
+        logger.info("Fetching unclassified emails with query: %s", UNLABELED_QUERY)
 
         emails = await self._email_service.fetch_latest_emails(
             user_id=user_id,
             max_results=max_results,
-            query=query,
+            query=UNLABELED_QUERY,
         )
 
         for email in emails:
@@ -54,6 +52,26 @@ class ClassificationSessionService:
         )
         logger.info("Session %s linked to %d emails", session_id, len(emails))
         return session_id
+
+    async def get_session_review_items(self, session_id: UUID) -> list[dict]:
+        """Return emails paired with their AI suggestion from agent_runs.
+
+        Used by the review UI so it can display what label the AI applied
+        without reading label fields from the emails table.
+        """
+        emails = await self.get_session_emails(session_id)
+        runs = await self._repo.fetch_session_agent_runs(session_id)
+        suggestion_map = {
+            r["email_id"]: r.get("result_payload") or {} for r in runs
+        }
+        return [
+            {
+                "email": e,
+                "suggestion": suggestion_map.get(str(e.id), {}).get("suggestion"),
+                "confidence": suggestion_map.get(str(e.id), {}).get("confidence"),
+            }
+            for e in emails
+        ]
 
     async def get_session(self, session_id: UUID) -> dict | None:
         """Fetch session metadata by ID."""

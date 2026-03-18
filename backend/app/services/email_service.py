@@ -1,4 +1,4 @@
-"""Email orchestration service with auto-labeling support."""
+"""Email fetch and persistence service."""
 
 from __future__ import annotations
 
@@ -9,10 +9,8 @@ from uuid import UUID, uuid4
 
 import logging
 
-from ..config import Settings
 from ..schemas.email import EmailItem
 from ..schemas.oauth import GmailTokens
-from .auto_label_engine import AutoLabelEngine
 from .gmail_toolkit import GmailService
 from .supabase_service import SupabaseService
 
@@ -21,39 +19,21 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Fetch and persist Gmail messages for a given user with intelligent auto-labeling."""
+    """Fetch and persist Gmail messages for a given user."""
 
     def __init__(
         self,
         gmail_service: GmailService,
         supabase: SupabaseService,
-        settings: Settings | None = None,
-        auto_label_engine: AutoLabelEngine | None = None,
+        settings=None,
     ) -> None:
         self._gmail_service = gmail_service
         self._supabase = supabase
-        self._settings = settings
-        self._auto_label_engine = auto_label_engine or AutoLabelEngine(supabase)
-
-    def _llm_absent(self) -> bool:
-        """Return True when no LLM backend is configured."""
-        if self._settings is None:
-            return True
-        return (
-            self._settings.agent_runtime_base_url is None
-            and not self._settings.ollama_enabled
-        )
 
     async def fetch_latest_emails(
         self, user_id: UUID, max_results: int = 20, query: str | None = None
     ) -> list[EmailItem]:
-        """Fetch latest emails from Gmail and sync with database.
-
-        NEW (2025-11-09): Now includes intelligent auto-labeling for new emails!
-        - Auto-applies labels based on learned patterns (confidence >= 40%)
-        - Preserves existing labels when re-fetching (never overwrites manual labels)
-        - Updates Gmail with "AI:Important" or "AI:Not Important" labels
-        """
+        """Fetch latest emails from Gmail and sync with database."""
         logger.info(f"🔄 FETCH START: user={user_id}, max_results={max_results}, query={query}")
         tokens = await self._ensure_tokens(user_id)
         messages = await self._gmail_service.list_messages(
@@ -64,117 +44,27 @@ class EmailService:
         )
         logger.info(f"📧 Fetched {len(messages)} Gmail messages for user {user_id}")
 
-        if len(messages) == 0:
-            logger.warning(f"No messages returned from Gmail for user {user_id}")
-        else:
-            logger.debug(f"First message sample: {messages[0] if messages else None}")
-
         items: list[EmailItem] = []
         new_count = 0
         existing_count = 0
-        auto_labeled_count = 0
 
         for raw in messages:
             item = self._parse_email(raw)
 
-            # Check if email already exists and reuse ID + preserve fields
             existing = await self._supabase.fetch_email_by_gmail_id(user_id, item.gmail_message_id)
-
             if existing:
-                # ============================================
-                # EXISTING EMAIL: Preserve all fields
-                # ============================================
                 existing_count += 1
                 item.id = existing.id
-                logger.debug(f"Reusing existing email ID {existing.id} for {item.gmail_message_id}")
-
-                # Preserve consolidated label fields
-                if existing.label:
-                    item.label = existing.label
-                    item.label_confidence = existing.label_confidence
-                    item.label_source = existing.label_source
-                    item.labeled_at = existing.labeled_at
-                    item.last_updated_by = existing.last_updated_by
-                    confidence_display = (
-                        f"{existing.label_confidence:.2f}"
-                        if existing.label_confidence is not None
-                        else "N/A"
-                    )
-                    logger.debug(
-                        f"Preserved label '{existing.label}' "
-                        f"(source: {existing.label_source}, "
-                        f"confidence: {confidence_display})"
-                    )
-
-                # Preserve sender_domain if it was already extracted
                 if existing.sender_domain and not item.sender_domain:
                     item.sender_domain = existing.sender_domain
-
             else:
-                # ============================================
-                # NEW EMAIL: Apply auto-labeling
-                # ============================================
                 new_count += 1
-                logger.info(
-                    f"🆕 NEW EMAIL: {item.gmail_message_id} - '{item.subject[:50]}...' "
-                    f"from {item.sender_email}"
-                )
-
-                # Try auto-labeling for new emails only when LLM is not configured
-                try:
-                    suggestion = (
-                        await self._auto_label_engine.suggest_label(
-                            email=item,
-                            user_id=user_id,
-                        )
-                        if self._llm_absent()
-                        else None
-                    )
-
-                    if suggestion:
-                        # Auto-label confidence >= threshold!
-                        auto_labeled_count += 1
-                        item.label = suggestion.label
-                        item.label_confidence = suggestion.confidence
-                        item.label_source = "auto"
-                        item.labeled_at = datetime.now(timezone.utc)
-                        item.last_updated_by = "auto"
-
-                        logger.info(
-                            f"🤖 AUTO-LABELED: '{item.label}' "
-                            f"(confidence: {suggestion.confidence:.3f}, "
-                            f"matched: {', '.join(suggestion.matched_patterns)})"
-                        )
-
-                        # Apply label to Gmail
-                        try:
-                            await self._gmail_service.apply_label(
-                                message_id=item.gmail_message_id,
-                                label_id=item.label,  # "Important" or "Not Important"
-                                tokens=tokens,
-                                user_id=str(user_id),
-                            )
-                            logger.debug(f"✅ Applied '{item.label}' to Gmail")
-                        except Exception as e:
-                            logger.warning(f"Failed to apply label to Gmail (continuing): {e}")
-                    else:
-                        # Confidence below threshold - email remains Uncategorized
-                        logger.debug(
-                            f"📭 UNCATEGORIZED: Email '{item.subject[:50]}...' "
-                            f"(no pattern match or low confidence)"
-                        )
-
-                except Exception as e:
-                    logger.error(f"Auto-labeling failed for {item.gmail_message_id}: {e}")
-                    # Continue without auto-label on error
 
             await self._supabase.upsert_email(user_id, item)
             items.append(item)
 
         logger.info(
-            f"✅ FETCH COMPLETE: {len(items)} emails "
-            f"({new_count} new, {existing_count} existing, "
-            f"{auto_labeled_count} auto-labeled)"
+            f"✅ FETCH COMPLETE: {len(items)} emails ({new_count} new, {existing_count} existing)"
         )
         return items
 
@@ -253,12 +143,6 @@ class EmailService:
             sender_domain=sender_domain,
             received_at=received_at,
             processed_at=None,
-            # Consolidated label fields - will be set by auto-labeling engine
-            label=None,
-            label_confidence=None,
-            label_source=None,
-            labeled_at=None,
-            last_updated_by=None,
         )
 
     def _normalize_headers(self, headers: Sequence[dict]) -> dict[str, str]:
