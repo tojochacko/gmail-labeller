@@ -58,19 +58,46 @@ class PIIRedactor:
             return
 
         try:
-            from presidio_analyzer import AnalyzerEngine  # type: ignore[import-untyped]
+            from presidio_analyzer import AnalyzerEngine, RecognizerRegistry  # type: ignore[import-untyped]
             from presidio_analyzer.nlp_engine import NlpEngineProvider  # type: ignore[import-untyped]
             from presidio_anonymizer import AnonymizerEngine  # type: ignore[import-untyped]
 
-            # Restrict to English-only to suppress warnings about es/it/pl recognizers
-            # that Presidio ships but cannot register without their respective spaCy models.
+            # Build an English-only NLP engine.
+            # Explicitly list spaCy entity types that have no Presidio equivalent in
+            # labels_to_ignore so the model does not emit "not mapped" warnings for
+            # CARDINAL, ORDINAL, QUANTITY, etc.
             nlp_engine = NlpEngineProvider(
                 nlp_configuration={
                     "nlp_engine_name": "spacy",
                     "models": [{"lang_code": "en", "model_name": "en_core_web_lg"}],
+                    "ner_model_configuration": {
+                        "labels_to_ignore": [
+                            "CARDINAL",
+                            "ORDINAL",
+                            "QUANTITY",
+                            "MONEY",
+                            "PERCENT",
+                            "WORK_OF_ART",
+                            "EVENT",
+                            "LANGUAGE",
+                            "LAW",
+                            "FAC",
+                            "PRODUCT",
+                        ],
+                    },
                 }
             ).create_engine()
-            self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
+
+            # Build an English-only recognizer registry so Presidio does not attempt
+            # to register es/it/pl recognizers and emit "language not supported" warnings.
+            registry = RecognizerRegistry(supported_languages=["en"])
+            registry.load_predefined_recognizers(languages=["en"])
+
+            self._analyzer = AnalyzerEngine(
+                nlp_engine=nlp_engine,
+                registry=registry,
+                supported_languages=["en"],
+            )
             self._anonymizer = AnonymizerEngine()
             logger.info("PII redaction engine initialized (presidio + en_core_web_lg)")
         except ImportError:
