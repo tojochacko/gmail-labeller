@@ -12,6 +12,7 @@ import json
 from ..config import Settings
 from ..schemas.agent import AgentRunRequest, AgentRunResponse, AgentRunStatusResponse
 from .pattern_learning_service import PatternLearningService
+from .pii_redactor import PIIRedactor
 from .supabase_service import SupabaseService
 
 
@@ -26,10 +27,12 @@ class AgentService:
         settings: Settings,
         supabase: SupabaseService,
         pattern_service: PatternLearningService | None = None,
+        pii_redactor: PIIRedactor | None = None,
     ) -> None:
         self._settings = settings
         self._supabase = supabase
         self._pattern_service = pattern_service or PatternLearningService(supabase)
+        self._pii_redactor = pii_redactor or PIIRedactor()
         self._mock_runs: dict[UUID, dict] = {}
 
     def _is_mock_mode(self) -> bool:
@@ -282,6 +285,18 @@ class AgentService:
                 f"{len(learned_context.important_domains)} important domains, "
                 f"{len(learned_context.important_keywords)} important keywords"
             )
+
+        # Redact PII from the prompt before it leaves the host machine.
+        # Mock mode is local-only, so redaction is skipped there.
+        if not self._is_mock_mode() and enhanced_prompt:
+            redaction = self._pii_redactor.redact(enhanced_prompt)
+            if redaction.entities_found:
+                logger.info(
+                    "Redacted %d PII entities from prompt for email %s",
+                    redaction.entities_found,
+                    request.email_id,
+                )
+            enhanced_prompt = redaction.text
 
         # Create enhanced request with learned context
         enhanced_request = AgentRunRequest(
