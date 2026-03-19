@@ -59,9 +59,18 @@ class PIIRedactor:
 
         try:
             from presidio_analyzer import AnalyzerEngine  # type: ignore[import-untyped]
+            from presidio_analyzer.nlp_engine import NlpEngineProvider  # type: ignore[import-untyped]
             from presidio_anonymizer import AnonymizerEngine  # type: ignore[import-untyped]
 
-            self._analyzer = AnalyzerEngine()
+            # Restrict to English-only to suppress warnings about es/it/pl recognizers
+            # that Presidio ships but cannot register without their respective spaCy models.
+            nlp_engine = NlpEngineProvider(
+                nlp_configuration={
+                    "nlp_engine_name": "spacy",
+                    "models": [{"lang_code": "en", "model_name": "en_core_web_lg"}],
+                }
+            ).create_engine()
+            self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
             self._anonymizer = AnonymizerEngine()
             logger.info("PII redaction engine initialized (presidio + en_core_web_lg)")
         except ImportError:
