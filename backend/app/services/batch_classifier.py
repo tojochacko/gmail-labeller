@@ -10,6 +10,7 @@ from uuid import UUID
 from ..schemas.agent import AgentRunRequest
 from .agent_service import AgentService
 from .gmail_toolkit import GmailService
+from .local_email_filter import LocalEmailFilter
 from .session_repository import SessionRepository
 from .supabase_service import SupabaseService
 
@@ -36,11 +37,13 @@ class BatchClassifier:
         supabase: SupabaseService,
         agent_service: AgentService,
         gmail_service: GmailService,
+        email_filter: LocalEmailFilter | None = None,
     ) -> None:
         self._repo = session_repo
         self._supabase = supabase
         self._agent_service = agent_service
         self._gmail_service = gmail_service
+        self._email_filter = email_filter or LocalEmailFilter()
 
     async def run_batch(self, session_id: UUID, user_id: UUID) -> BatchResult:
         """Classify all unlabeled emails in the session sequentially.
@@ -85,30 +88,43 @@ class BatchClassifier:
 
                 email_id = _UUID(email_id_str)
 
-                # Build classification prompt from email fields
-                prompt = _build_classification_prompt(email_row)
-                logger.info("Prompt for '%s':\n%s", subject[:60], prompt)
-
-                run = await self._agent_service.trigger_agent_run(
-                    AgentRunRequest(
-                        user_id=user_id,
-                        email_id=email_id,
-                        gmail_message_id=gmail_message_id,
-                        prompt=prompt,
-                        batch_run_id=session_id,
-                    )
-                )
-
-                # Fetch result to get the suggestion
-                result = await self._agent_service.get_agent_run(run.run_id)
-                suggestion = None
-                if result and result.result_payload:
-                    suggestion = result.result_payload.get("suggestion")
+                # Check local rules first — may skip the LLM entirely.
+                filter_result = self._email_filter.check(email_row)
+                if filter_result.skip_llm:
+                    suggestion = filter_result.label
                     logger.info(
-                        "LLM response for '%s': %s",
-                        subject[:60],
-                        result.result_payload,
+                        "[%d/%d] Local filter: '%s' → %s (%s)",
+                        classified + 1,
+                        total,
+                        subject[:50],
+                        suggestion,
+                        filter_result.reason,
                     )
+                else:
+                    # Build classification prompt from email fields
+                    prompt = _build_classification_prompt(email_row)
+                    logger.info("Prompt for '%s':\n%s", subject[:60], prompt)
+
+                    run = await self._agent_service.trigger_agent_run(
+                        AgentRunRequest(
+                            user_id=user_id,
+                            email_id=email_id,
+                            gmail_message_id=gmail_message_id,
+                            prompt=prompt,
+                            batch_run_id=session_id,
+                        )
+                    )
+
+                    # Fetch result to get the suggestion
+                    result = await self._agent_service.get_agent_run(run.run_id)
+                    suggestion = None
+                    if result and result.result_payload:
+                        suggestion = result.result_payload.get("suggestion")
+                        logger.info(
+                            "LLM response for '%s': %s",
+                            subject[:60],
+                            result.result_payload,
+                        )
 
                 # Apply Gmail label if we have tokens and a suggestion
                 if tokens and suggestion in ("Important", "Not Important"):

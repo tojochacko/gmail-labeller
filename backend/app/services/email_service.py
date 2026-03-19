@@ -33,14 +33,23 @@ class EmailService:
     async def fetch_latest_emails(
         self, user_id: UUID, max_results: int = 20, query: str | None = None
     ) -> list[EmailItem]:
-        """Fetch latest emails from Gmail and sync with database."""
-        logger.info(f"🔄 FETCH START: user={user_id}, max_results={max_results}, query={query}")
+        """Fetch latest emails from Gmail and sync with database.
+
+        Emails with attachments are excluded at the Gmail query level using
+        the `-has:attachment` operator so they never enter the classification pipeline.
+        """
+        # Always exclude attachment emails — they are sensitive and must not be sent
+        # to a cloud LLM. The exclusion happens server-side in Gmail before any data
+        # is transmitted, making this more efficient than post-fetch filtering.
+        effective_query = f"{query} -has:attachment" if query else "in:inbox -has:attachment"
+
+        logger.info(f"🔄 FETCH START: user={user_id}, max_results={max_results}, query={effective_query}")
         tokens = await self._ensure_tokens(user_id)
         messages = await self._gmail_service.list_messages(
             tokens=tokens,
             user_id=str(user_id),
             max_results=max_results,
-            query=query,
+            query=effective_query,
         )
         logger.info(f"📧 Fetched {len(messages)} Gmail messages for user {user_id}")
 
