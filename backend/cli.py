@@ -454,7 +454,7 @@ async def cmd_cleanup_session(session_svc: ClassificationSessionService, session
 async def main() -> None:
     console.print(Panel("[bold cyan]Gmail Labeler — Backend CLI[/bold cyan]", expand=False))
 
-    _, supabase, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier = (
+    settings, supabase, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier = (
         build_services()
     )
 
@@ -480,7 +480,7 @@ async def main() -> None:
         console.print()
         for key, label in menu.items():
             console.print(f"  [cyan]{key}[/cyan]  {label}")
-        choice = Prompt.ask("\nChoice", choices=list(menu.keys()), default="0")
+        choice = Prompt.ask("\nChoice", choices=list(menu.keys()), default="6")
 
         if choice == "0":
             break
