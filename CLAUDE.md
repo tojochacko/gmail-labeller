@@ -792,6 +792,10 @@ Agents subscribe to topics using `TypeSubscription`. Messages are published to `
 - **backend/app/services/**: Business logic layer
   - `gmail_toolkit.py`: Composio Gmail adapter (Composio 1.0 API)
   - `agent_service.py`: AI agent integration (with mock mode)
+  - `pii_redactor.py`: PII redaction via Microsoft Presidio — runs before every LLM call and before pattern storage
+  - `pattern_learning_service.py`: Extracts domain/keyword patterns from labeled emails; keywords are subject-only, personal provider domains are skipped
+  - `label_service.py`: Applies Gmail labels and triggers pattern learning; redacts subject PII before patterns are stored
+  - `local_email_filter.py`: Rule-based pre-filter — skips LLM for sensitive/automated emails (bank statements, OTPs, transaction alerts)
   - `supabase_service.py`: Database operations
 - **backend/app/schemas/**: Pydantic models for request/response validation
 - **backend/tests/**: Comprehensive test suite (15/15 tests passing)
@@ -900,10 +904,13 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Testing Status
 
-**Backend Tests**: 15/15 passing ✅
-- 9 Composio adapter tests
+**Backend Tests**: 62/62 passing ✅
+- 14 Composio adapter tests
+- 15 Local email filter tests
+- 17 PII pattern guard tests
+- 11 PII redactor tests
 - 2 OAuth workflow tests
-- 4 API route tests
+- 6 API route tests (includes label endpoint)
 
 **Test Commands**:
 ```bash
@@ -914,8 +921,10 @@ uv run pytest backend/tests/ -v
 # Run with coverage
 uv run pytest backend/tests/ --cov=backend/app --cov-report=html
 
-# Run specific test file
+# Run specific test files
 uv run pytest backend/tests/test_composio_adapter.py -v
+uv run pytest backend/tests/test_pii_pattern_guard.py -v
+uv run pytest backend/tests/test_local_email_filter.py -v
 ```
 
 ### Ready for End-to-End Testing

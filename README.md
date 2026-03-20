@@ -74,6 +74,9 @@ behavior and automatically categorizes emails during the fetch process.
 - Pattern weights increase from corrections (1.0x → 2.0x → up to 5.0x)
 - Continuous improvement from user feedback
 
+**Privacy**
+- Personal information is sanitised before being used in AI classification or stored as learned patterns
+
 ### API Integration
 
 The auto-labeling system provides enhanced REST endpoints:
@@ -166,6 +169,7 @@ uv run mypy backend/
 
 ## Next Steps
 
-- Review `COMPOSIO_INTEGRATION_FIX.md` for Composio setup instructions
-- Read `OAUTH_TEST_REPORT.md` for detailed test documentation
+- Review `docs/COMPOSIO_INTEGRATION_FIX.md` for Composio setup instructions
+- Read `docs/OAUTH_TEST_REPORT.md` for detailed test documentation
+- Read `docs/PII_PROTECTION.md` for details on how email data is handled
 - See `CLAUDE.md` for project-specific development guidelines

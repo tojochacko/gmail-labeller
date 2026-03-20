@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import cast
 from uuid import UUID
 
@@ -14,6 +13,7 @@ from ..schemas.labels import ApplyLabelRequest, ApplyLabelResponse
 from ..schemas.oauth import GmailTokens
 from .gmail_toolkit import GmailService
 from .pattern_learning_service import PatternLearningService
+from .pii_redactor import PIIRedactor
 from .supabase_service import SupabaseService
 
 
@@ -31,10 +31,12 @@ class LabelService:
         gmail_service: GmailService,
         supabase: SupabaseService,
         pattern_service: PatternLearningService | None = None,
+        pii_redactor: PIIRedactor | None = None,
     ) -> None:
         self._gmail_service = gmail_service
         self._supabase = supabase
         self._pattern_service = pattern_service or PatternLearningService(supabase)
+        self._pii_redactor = pii_redactor or PIIRedactor()
 
     async def apply_label(self, request: ApplyLabelRequest) -> ApplyLabelResponse:
         """Apply a Gmail label and trigger pattern learning.
@@ -98,13 +100,26 @@ class LabelService:
                 )
                 return
 
-            # Extract patterns from the labeled email
+            # Redact PII from subject before it is stored as learned patterns.
+            # This runs at the source so the DB never holds raw personal data.
+            # Snippet is intentionally excluded — body text has higher PII density.
+            raw_subject = email.subject or ""
+            redacted = self._pii_redactor.redact(raw_subject)
+            if redacted.entities_found:
+                logger.info(
+                    "Redacted %d PII entities from subject before pattern extraction "
+                    "(email %s): %s",
+                    redacted.entities_found,
+                    email.id,
+                    redacted.entity_counts,
+                )
+
             extraction_request = PatternExtractionRequest(
                 email_id=email.id,
                 label=applied_label,
                 sender_email=email.sender_email,
-                email_subject=email.subject or "",
-                email_snippet=email.snippet,
+                email_subject=redacted.text,
+                email_snippet=None,
             )
 
             await self._pattern_service.extract_and_store_patterns(
@@ -117,13 +132,6 @@ class LabelService:
         except Exception as e:
             # Don't fail the label application if pattern extraction fails
             logger.warning(f"Pattern extraction failed: {e}")
-
-    def _extract_domain(self, email: str) -> str | None:
-        """Extract domain from email address."""
-        match = re.search(r"@([\w\.-]+)", email)
-        if match:
-            return match.group(1).lower()
-        return None
 
     async def _ensure_tokens(self, user_id: UUID) -> GmailTokens:
         tokens = await self._supabase.fetch_gmail_tokens(user_id)

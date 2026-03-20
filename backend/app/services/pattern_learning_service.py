@@ -138,6 +138,26 @@ class PatternLearningService:
     # Maximum keywords to extract per email
     MAX_KEYWORDS_PER_EMAIL = 5
 
+    # Personal email provider domains — carry no organisational signal and
+    # may encode personal names in subdomains; never stored as patterns.
+    PERSONAL_EMAIL_DOMAINS: frozenset[str] = frozenset(
+        {
+            "gmail.com",
+            "yahoo.com",
+            "hotmail.com",
+            "outlook.com",
+            "icloud.com",
+            "live.com",
+            "msn.com",
+            "aol.com",
+            "protonmail.com",
+            "me.com",
+            "mac.com",
+            "googlemail.com",
+            "ymail.com",
+        }
+    )
+
     def __init__(self, supabase: SupabaseService):
         """Initialize pattern learning service."""
         self._supabase = supabase
@@ -168,8 +188,8 @@ class PatternLearningService:
             )
             patterns_added["domains"] = 1
 
-        # Extract keywords
-        keywords = self._extract_keywords(request.email_subject, request.email_snippet)
+        # Extract keywords from subject only — snippet is excluded to limit PII exposure.
+        keywords = self._extract_keywords(request.email_subject)
         for keyword in keywords:
             await self._upsert_pattern(
                 user_id=user_id,
@@ -188,34 +208,40 @@ class PatternLearningService:
 
     def _extract_domain(self, email: str) -> Optional[str]:
         """
-        Extract domain from email address.
+        Extract domain from email address, skipping personal providers.
+
+        Personal email provider domains (gmail.com, yahoo.com, etc.) are excluded
+        because they carry no organisational signal and subdomains may encode names.
 
         Args:
             email: Email address (e.g., "user@example.com")
 
         Returns:
-            Domain name (e.g., "example.com") or None if invalid
+            Domain name (e.g., "example.com") or None if invalid or personal provider
         """
         match = re.search(r"@([\w\.-]+)", email)
-        if match:
-            return match.group(1).lower()
-        return None
+        if not match:
+            return None
+        domain = match.group(1).lower()
+        if domain in self.PERSONAL_EMAIL_DOMAINS:
+            logger.debug("Skipping personal domain '%s' — no organisational signal", domain)
+            return None
+        return domain
 
-    def _extract_keywords(self, subject: str, snippet: Optional[str] = None) -> list[str]:
+    def _extract_keywords(self, subject: str) -> list[str]:
         """
-        Extract meaningful keywords from email content.
+        Extract meaningful keywords from the email subject line only.
+
+        Snippet is intentionally excluded: body text carries a higher density of
+        PII (names, addresses, medical/financial terms) than subject lines.
 
         Args:
-            subject: Email subject line
-            snippet: Email snippet/preview
+            subject: Email subject line (should be PII-redacted before calling)
 
         Returns:
             List of top keywords (max MAX_KEYWORDS_PER_EMAIL)
         """
-        # Combine subject and snippet
         text = subject or ""
-        if snippet:
-            text += " " + snippet
 
         # Normalize: lowercase and remove special characters
         text = re.sub(r"[^\w\s]", " ", text.lower())
