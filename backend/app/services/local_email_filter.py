@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 _SENSITIVE_SUBJECT_PATTERNS: list[str] = [
     "credit card statement",
     "bank statement",
+    "transaction alert",
+    "otp",
 ]
 
 

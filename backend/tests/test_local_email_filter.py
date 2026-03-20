@@ -45,6 +45,18 @@ class TestSensitiveSubjectRule:
     def test_partial_subject_match(self) -> None:
         assert self.rule.check(_email(subject="Re: bank statement enclosed")) is not None
 
+    def test_fires_on_transaction_alert(self) -> None:
+        result = self.rule.check(_email(subject="Transaction Alert: Rs. 500 debited"))
+        assert result is not None
+        assert result.skip_llm is True
+        assert result.label == "Important"
+
+    def test_fires_on_otp(self) -> None:
+        result = self.rule.check(_email(subject="Your OTP for login is 123456"))
+        assert result is not None
+        assert result.skip_llm is True
+        assert result.label == "Important"
+
     def test_does_not_fire_on_unrelated_subject(self) -> None:
         assert self.rule.check(_email(subject="Meeting tomorrow at 9am")) is None
 
