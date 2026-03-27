@@ -40,14 +40,16 @@ class DBService:
     # Users
     # ------------------------------------------------------------------
 
-    async def upsert_user(self, user_id: UUID, email: str) -> None:
+    async def upsert_user(self, user_id: UUID, email: str) -> UUID:
+        """Insert or update a user. Returns the authoritative user_id (existing or new)."""
         async with self._session_factory() as session:
-            obj = await session.get(User, str(user_id))
-            if obj is None:
-                session.add(User(id=str(user_id), email=email))
-            else:
-                obj.email = email
+            result = await session.execute(select(User).where(User.email == email))
+            existing = result.scalar_one_or_none()
+            if existing is not None:
+                return UUID(existing.id)
+            session.add(User(id=str(user_id), email=email))
             await session.commit()
+            return user_id
 
     # ------------------------------------------------------------------
     # Gmail tokens
@@ -81,6 +83,13 @@ class DBService:
                 obj.token_type = tokens.token_type
                 obj.id_token = encrypted_id
             await session.commit()
+
+    async def delete_gmail_tokens(self, user_id: UUID) -> None:
+        async with self._session_factory() as session:
+            obj = await session.get(GmailToken, str(user_id))
+            if obj is not None:
+                await session.delete(obj)
+                await session.commit()
 
     async def fetch_gmail_tokens(self, user_id: UUID) -> GmailTokens | None:
         async with self._session_factory() as session:

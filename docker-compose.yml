@@ -10,7 +10,9 @@ services:
       - path: config/.env
         required: false
     environment:
-      DATABASE_URL: sqlite:////app/data/app.db
+      DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
+    ports:
+      - "8001:8000"
     command: sleep infinity
 
 volumes:

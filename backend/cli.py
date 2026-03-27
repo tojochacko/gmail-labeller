@@ -7,10 +7,8 @@ import asyncio
 import json
 import secrets
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from threading import Event, Thread
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import logging
@@ -23,16 +21,17 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from backend.app.config import get_settings
+from backend.app.db.engine import make_engine, make_session_factory
 from backend.app.schemas.agent import AgentRunRequest
 from backend.app.schemas.labels import ApplyLabelRequest
 from backend.app.services.agent_service import AgentService
 from backend.app.services.batch_classifier import BatchClassifier
 from backend.app.services.classification_session_service import ClassificationSessionService
+from backend.app.services.db_service import DBService
 from backend.app.services.email_service import EmailService
 from backend.app.services.session_repository import SessionRepository
 from backend.app.services.gmail_toolkit import GmailService, GmailToolkitFactory
 from backend.app.services.label_service import LabelService
-from backend.app.services.supabase_service import SupabaseService
 
 console = Console()
 
@@ -45,7 +44,6 @@ logging.basicConfig(
 # Keep noisy libraries quiet — we only want our own service logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("supabase").setLevel(logging.WARNING)
 
 SESSION_FILE = Path.home() / ".gmail-labeler" / "session.json"
 
@@ -88,10 +86,10 @@ def _format_gmail_label(
 
 
 async def _build_custom_label_map(
-    gmail: GmailService, supabase: SupabaseService, user_id: UUID
+    gmail: GmailService, db: DBService, user_id: UUID
 ) -> dict[str, str]:
     """Return {label_id: label_name} for all user-defined (non-system) Gmail labels."""
-    tokens = await supabase.fetch_gmail_tokens(user_id)
+    tokens = await db.fetch_gmail_tokens(user_id)
     if not tokens:
         return {}
     labels = await gmail.list_labels(tokens=tokens, user_id=str(user_id))
@@ -101,9 +99,6 @@ async def _build_custom_label_map(
         if isinstance(lbl, dict) and "id" in lbl and "name" in lbl
         and lbl["id"] not in _SYSTEM_LABEL_MAP
     }
-OAUTH_CALLBACK_PORT = 3005
-OAUTH_CALLBACK_PATH = "/oauth/callback"
-
 
 # ── Session ──────────────────────────────────────────────────────────────────
 
@@ -132,47 +127,6 @@ def save_last_session_id(session: dict, session_id: str) -> None:
     SESSION_FILE.write_text(json.dumps(data))
 
 
-# ── OAuth callback server ─────────────────────────────────────────────────────
-
-
-def _make_callback_handler(code_event: Event, captured: dict):
-    """Build an HTTPServer handler that captures OAuth callback params.
-
-    Handles the standard OAuth2 flow: ?code=...
-    """
-
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args) -> None:  # silence request logs
-            pass
-
-        def do_GET(self):
-            parsed = urlparse(self.path)
-            if parsed.path == OAUTH_CALLBACK_PATH:
-                params = parse_qs(parsed.query)
-                captured["code"] = params.get("code", [None])[0]
-                captured["error"] = params.get("error", [None])[0]
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(
-                    b"<h2>Connected! You can close this tab and return to the terminal.</h2>"
-                )
-                code_event.set()
-
-    return Handler
-
-
-def wait_for_oauth_callback() -> dict:
-    """Start a local server, wait for the OAuth redirect, return captured params."""
-    code_event = Event()
-    captured: dict = {}
-    handler = _make_callback_handler(code_event, captured)
-    server = HTTPServer(("localhost", OAUTH_CALLBACK_PORT), handler)
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    code_event.wait(timeout=120)
-    server.shutdown()
-    return captured
 
 
 # ── Service factory ───────────────────────────────────────────────────────────
@@ -180,51 +134,56 @@ def wait_for_oauth_callback() -> dict:
 
 def build_services():
     settings = get_settings()
-    supabase = SupabaseService(settings)
+    engine = make_engine(settings.database_url)
+    session_factory = make_session_factory(engine)
+    db = DBService(session_factory=session_factory, fernet_key=settings.fernet_secret_key.get_secret_value())
     toolkit = GmailToolkitFactory(settings).build()
     gmail = GmailService(toolkit, settings)
-    email_svc = EmailService(gmail, supabase, settings)
-    label_svc = LabelService(gmail, supabase)
-    agent_svc = AgentService(settings, supabase)
-    session_repo = SessionRepository(supabase.client)
+    email_svc = EmailService(gmail, db, settings)
+    label_svc = LabelService(gmail, db)
+    agent_svc = AgentService(settings, db)
+    session_repo = SessionRepository(db.session_factory)
     session_svc = ClassificationSessionService(session_repo, email_svc)
-    batch_classifier = BatchClassifier(session_repo, supabase, agent_svc, gmail)
-    return settings, supabase, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier
+    batch_classifier = BatchClassifier(session_repo, db, agent_svc, gmail)
+    return settings, db, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 
-async def cmd_connect(supabase: SupabaseService, gmail: GmailService) -> dict | None:
+async def cmd_connect(db: DBService, gmail: GmailService) -> dict | None:
     """Run the OAuth flow and persist the session."""
     email = Prompt.ask("[cyan]Your Google account email[/cyan]")
-    user_id = str(uuid4())
-    state = secrets.token_urlsafe(16)
-
-    await supabase.upsert_user(UUID(user_id), email)
+    user_id = str(await db.upsert_user(uuid4(), email))
+    state = f"{user_id}.{secrets.token_urlsafe(16)}"
     auth_url = await gmail.create_authorization_url(state=state, user_id=user_id)
 
-    console.print(Panel(f"[link={auth_url}]{auth_url}[/link]", title="Opening browser…"))
-    webbrowser.open(str(auth_url))
+    console.print("\nOpen this URL in your browser to connect Gmail:\n")
+    print(str(auth_url))
+    console.print("\n[dim]Complete the OAuth flow in your browser, then press Enter.[/dim]")
+    input()
 
-    with console.status("[yellow]Waiting for OAuth callback on port 3005…[/yellow]"):
-        callback = wait_for_oauth_callback()
-
-    if not callback.get("code"):
-        console.print("[red]OAuth timed out or was cancelled.[/red]")
+    tokens = await db.fetch_gmail_tokens(UUID(user_id))
+    if not tokens:
+        console.print("[red]No tokens found. Did you complete the OAuth flow?[/red]")
         return None
-
-    with console.status("[yellow]Storing tokens…[/yellow]"):
-        tokens = await gmail.exchange_code_for_tokens(callback["code"])
-        await supabase.store_gmail_tokens(UUID(user_id), tokens)
 
     save_session(user_id, email)
     console.print(f"[green]✓ Connected as {email}[/green]  (user_id: {user_id})")
     return {"user_id": user_id, "email": email}
 
 
-async def cmd_status(supabase: SupabaseService, session: dict) -> None:
-    tokens = await supabase.fetch_gmail_tokens(UUID(session["user_id"]))
+async def cmd_disconnect(db: DBService, session: dict) -> None:
+    if not Confirm.ask("[yellow]Remove stored Gmail tokens?[/yellow]"):
+        console.print("[dim]Cancelled.[/dim]")
+        return
+    await db.delete_gmail_tokens(UUID(session["user_id"]))
+    SESSION_FILE.unlink(missing_ok=True)
+    console.print("[green]✓ Disconnected. Session cleared.[/green]")
+
+
+async def cmd_status(db: DBService, session: dict) -> None:
+    tokens = await db.fetch_gmail_tokens(UUID(session["user_id"]))
     if tokens:
         console.print(
             f"[green]✓ Connected[/green]  {session['email']}  "
@@ -235,7 +194,7 @@ async def cmd_status(supabase: SupabaseService, session: dict) -> None:
 
 
 async def cmd_fetch_emails(
-    email_svc: EmailService, gmail: GmailService, supabase: SupabaseService, session: dict
+    email_svc: EmailService, gmail: GmailService, db: DBService, session: dict
 ) -> list:
     max_results = int(Prompt.ask("Max emails to fetch", default="20"))
     query = Prompt.ask("Gmail query filter (leave blank for inbox)", default="in:inbox") or None
@@ -246,7 +205,7 @@ async def cmd_fetch_emails(
             email_svc.fetch_latest_emails(
                 user_id=user_id, max_results=max_results, query=query
             ),
-            _build_custom_label_map(gmail, supabase, user_id),
+            _build_custom_label_map(gmail, db, user_id),
         )
 
     table = Table(title=f"{len(emails)} emails", box=box.ROUNDED, show_lines=False)
@@ -339,7 +298,7 @@ async def cmd_start_session(
     session_svc: ClassificationSessionService,
     batch_classifier: BatchClassifier,
     gmail: GmailService,
-    supabase: SupabaseService,
+    db: DBService,
     session: dict,
 ) -> None:
     """Create a classification session, fetch emails, run batch classification."""
@@ -351,7 +310,7 @@ async def cmd_start_session(
     with console.status("[yellow]Creating session and fetching emails…[/yellow]"):
         (session_id, queued_emails), custom_label_map = await asyncio.gather(
             session_svc.create_session(user_id=user_id, max_results=max_results),
-            _build_custom_label_map(gmail, supabase, user_id),
+            _build_custom_label_map(gmail, db, user_id),
         )
 
     save_last_session_id(session, str(session_id))
@@ -386,7 +345,7 @@ async def cmd_start_session(
         f"[green]✓ Classified {result.classified}/{result.total} emails[/green]"
         + (f"  [yellow]({result.failed} failed)[/yellow]" if result.failed else "")
     )
-    review_url = f"http://localhost:8000/api/review/{session_id}"
+    review_url = f"http://localhost:8001/api/review/{session_id}"
     console.print(Panel(f"[link={review_url}]{review_url}[/link]", title="Review UI"))
     webbrowser.open(review_url)
 
@@ -399,7 +358,7 @@ async def cmd_open_review(session: dict) -> None:
             "[yellow]No previous session found. Run 'Start classification session' first.[/yellow]"
         )
         return
-    review_url = f"http://localhost:8000/api/review/{last_session_id}"
+    review_url = f"http://localhost:8001/api/review/{last_session_id}"
     console.print(f"[cyan]Opening:[/cyan] {review_url}")
     webbrowser.open(review_url)
 
@@ -433,7 +392,7 @@ async def cmd_cleanup_session(session_svc: ClassificationSessionService, session
 async def main() -> None:
     console.print(Panel("[bold cyan]Gmail Labeler — Backend CLI[/bold cyan]", expand=False))
 
-    settings, supabase, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier = (
+    settings, db, gmail, email_svc, label_svc, agent_svc, session_svc, batch_classifier = (
         build_services()
     )
 
@@ -446,12 +405,13 @@ async def main() -> None:
     menu = {
         "1": "Connect Gmail (OAuth)",
         "2": "Check connection status",
-        "3": "Fetch emails",
-        "4": "Label an email",
-        "5": "Classify email with AI",
-        "6": "Start classification session (batch)",
-        "7": "Open review UI",
-        "8": "Cleanup last session",
+        "3": "Disconnect Gmail",
+        "4": "Fetch emails",
+        "5": "Label an email",
+        "6": "Classify email with AI",
+        "7": "Start classification session (batch)",
+        "8": "Open review UI",
+        "9": "Cleanup last session",
         "0": "Exit",
     }
 
@@ -459,45 +419,51 @@ async def main() -> None:
         console.print()
         for key, label in menu.items():
             console.print(f"  [cyan]{key}[/cyan]  {label}")
-        choice = Prompt.ask("\nChoice", choices=list(menu.keys()), default="6")
+        choice = Prompt.ask("\nChoice", choices=list(menu.keys()), default="7")
 
         if choice == "0":
             break
         elif choice == "1":
-            result = await cmd_connect(supabase, gmail)
+            result = await cmd_connect(db, gmail)
             if result:
                 session = result
         elif choice == "2":
             if session:
-                await cmd_status(supabase, session)
+                await cmd_status(db, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "3":
             if session:
-                emails = await cmd_fetch_emails(email_svc, gmail, supabase, session)
+                await cmd_disconnect(db, session)
+                session = None
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "4":
             if session:
-                await cmd_label_email(label_svc, emails, session)
+                emails = await cmd_fetch_emails(email_svc, gmail, db, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "5":
             if session:
-                await cmd_classify_email(agent_svc, emails, session)
+                await cmd_label_email(label_svc, emails, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "6":
             if session:
-                await cmd_start_session(session_svc, batch_classifier, gmail, supabase, session)
+                await cmd_classify_email(agent_svc, emails, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "7":
             if session:
-                await cmd_open_review(session)
+                await cmd_start_session(session_svc, batch_classifier, gmail, db, session)
             else:
                 console.print("[yellow]No session — connect first.[/yellow]")
         elif choice == "8":
+            if session:
+                await cmd_open_review(session)
+            else:
+                console.print("[yellow]No session — connect first.[/yellow]")
+        elif choice == "9":
             if session:
                 await cmd_cleanup_session(session_svc, session)
             else:

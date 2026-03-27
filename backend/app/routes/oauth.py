@@ -31,7 +31,7 @@ async def start_oauth_flow(
     supabase: DBService = Depends(get_db_service),
 ) -> OAuthStartResponse:
     """Kick off Gmail OAuth by returning an authorization URL."""
-    state = secrets.token_urlsafe(16)
+    state = f"{payload.user_id}.{secrets.token_urlsafe(16)}"
     await supabase.upsert_user(payload.user_id, payload.email)
     authorization_url = await gmail_service.create_authorization_url(
         state=state, user_id=str(payload.user_id)
@@ -41,20 +41,25 @@ async def start_oauth_flow(
     return OAuthStartResponse(authorization_url=authorization_url, state=state)  # type: ignore[arg-type]
 
 
-@router.post(
+@router.get(
     "/callback",
     response_model=OAuthCallbackResponse,
     status_code=status.HTTP_200_OK,
 )
 async def oauth_callback(
-    payload: OAuthCallbackRequest,
+    code: str,
+    state: str,
     gmail_service: GmailService = Depends(get_gmail_service),
     supabase: DBService = Depends(get_db_service),
 ) -> OAuthCallbackResponse:
-    """Process Gmail OAuth callback and persist tokens."""
-    tokens = await gmail_service.exchange_code_for_tokens(payload.code)
-    await supabase.store_gmail_tokens(payload.user_id, tokens)
-    logger.info("Stored Gmail OAuth tokens for user {}", payload.user_id)
+    """Process Gmail OAuth callback from Google redirect."""
+    try:
+        user_id = UUID(state.split(".")[0])
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter.")
+    tokens = await gmail_service.exchange_code_for_tokens(code)
+    await supabase.store_gmail_tokens(user_id, tokens)
+    logger.info("Stored Gmail OAuth tokens for user {}", user_id)
     return OAuthCallbackResponse(connected=True, expires_at=tokens.expires_at)
 
 

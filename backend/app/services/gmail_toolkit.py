@@ -53,7 +53,7 @@ class GmailApiAdapter:
                 "redirect_uris": [self._redirect_uri],
             }
         }
-        flow = Flow.from_client_config(config, scopes=self._scopes)
+        flow = Flow.from_client_config(config, scopes=self._scopes, autogenerate_code_verifier=False)
         flow.redirect_uri = self._redirect_uri
         return flow
 
@@ -77,7 +77,6 @@ class GmailApiAdapter:
         """Return a Google OAuth2 authorization URL."""
         url, _ = self._flow().authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             state=state,
             prompt="consent",
         )
