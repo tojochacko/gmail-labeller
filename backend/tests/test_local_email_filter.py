@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from backend.app.services.local_email_filter import (
     FilterResult,

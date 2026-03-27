@@ -1,0 +1,17 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app                # Mount source for live editing
+      - venv:/app/.venv       # Preserve the image's venv (not overwritten by source mount)
+    env_file:
+      - path: config/.env
+        required: false
+    environment:
+      DATABASE_URL: sqlite:////app/data/app.db
+    command: sleep infinity
+
+volumes:
+  venv:

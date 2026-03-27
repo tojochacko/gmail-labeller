@@ -1,0 +1,13 @@
+.venv
+data/*.db
+__pycache__
+**/__pycache__
+*.pyc
+.git
+.env
+.env.*
+config/.env*
+.worktrees
+worktrees
+docs
+.devcontainer
