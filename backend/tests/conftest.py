@@ -22,10 +22,10 @@ from backend.app.config import Settings  # noqa: E402
 from backend.app.main import create_app  # noqa: E402
 from backend.app.dependencies import (  # noqa: E402
     get_agent_service,
+    get_db_service,
     get_email_service,
     get_gmail_service,
     get_label_service,
-    get_supabase_service,
 )
 from backend.app.schemas import (  # noqa: E402
     AgentRunRequest,
@@ -39,7 +39,7 @@ from backend.app.schemas import (  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 
 
-class FakeSupabaseService:
+class FakeDBService:
     def __init__(self) -> None:
         self.users: dict[UUID, str] = {}
         self.tokens: dict[UUID, GmailTokens] = {}
@@ -66,6 +66,7 @@ class FakeSupabaseService:
         status: str,
         result_payload: dict | None = None,
         error_message: str | None = None,
+        batch_run_id: UUID | None = None,
     ) -> None:
         self.agent_runs[run_id] = AgentRunStatusResponse(
             run_id=run_id,
@@ -159,8 +160,14 @@ class FakeAgentService:
 
 
 @pytest.fixture
-def fake_supabase() -> FakeSupabaseService:
-    return FakeSupabaseService()
+def fake_db_service() -> FakeDBService:
+    return FakeDBService()
+
+
+# Keep old name as alias so any tests using fake_supabase still work
+@pytest.fixture
+def fake_supabase() -> FakeDBService:
+    return FakeDBService()
 
 
 @pytest.fixture
@@ -185,7 +192,7 @@ def fake_agent_service() -> FakeAgentService:
 
 @pytest.fixture
 def client(
-    fake_supabase: FakeSupabaseService,
+    fake_supabase: FakeDBService,
     fake_gmail_service: FakeGmailService,
     fake_email_service: FakeEmailService,
     fake_label_service: FakeLabelService,
@@ -193,9 +200,7 @@ def client(
 ) -> Iterator[TestClient]:
     settings = Settings.model_validate(
         {
-            "SUPABASE_URL": "https://example.supabase.co",
-            "SUPABASE_SERVICE_ROLE_KEY": "service-role-key",
-            "SUPABASE_ANON_KEY": "anon-key",
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
             "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
             "AGENT_RUNTIME_BASE_URL": "http://localhost:9000",
             "COMPOSIO_API_KEY": "cmp-test",
@@ -208,7 +213,7 @@ def client(
     )
     app = create_app(settings)
 
-    app.dependency_overrides[get_supabase_service] = lambda: fake_supabase
+    app.dependency_overrides[get_db_service] = lambda: fake_supabase
     app.dependency_overrides[get_gmail_service] = lambda: fake_gmail_service
     app.dependency_overrides[get_email_service] = lambda: fake_email_service
     app.dependency_overrides[get_label_service] = lambda: fake_label_service

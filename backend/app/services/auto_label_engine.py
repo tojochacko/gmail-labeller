@@ -26,7 +26,7 @@ from typing import Literal, Optional
 from uuid import UUID
 
 from ..schemas.email import EmailItem, LabelType
-from .supabase_service import SupabaseService
+from .db_service import DBService as SupabaseService
 
 logger = logging.getLogger(__name__)
 

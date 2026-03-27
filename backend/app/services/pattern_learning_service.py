@@ -10,7 +10,7 @@ from ..schemas.label_patterns import (
     LearnedContext,
     PatternExtractionRequest,
 )
-from .supabase_service import SupabaseService
+from .db_service import DBService as SupabaseService
 
 logger = logging.getLogger(__name__)
 

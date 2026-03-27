@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..dependencies import get_gmail_service, get_supabase_service
+from ..dependencies import get_db_service, get_gmail_service
 from ..schemas.oauth import (
     OAuthCallbackRequest,
     OAuthCallbackResponse,
@@ -16,8 +16,8 @@ from ..schemas.oauth import (
     OAuthStartResponse,
     OAuthStatusResponse,
 )
+from ..services.db_service import DBService
 from ..services.gmail_toolkit import GmailService
-from ..services.supabase_service import SupabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ router = APIRouter()
 async def start_oauth_flow(
     payload: OAuthStartRequest,
     gmail_service: GmailService = Depends(get_gmail_service),
-    supabase: SupabaseService = Depends(get_supabase_service),
+    supabase: DBService = Depends(get_db_service),
 ) -> OAuthStartResponse:
     """Kick off Gmail OAuth by returning an authorization URL."""
     state = secrets.token_urlsafe(16)
@@ -49,7 +49,7 @@ async def start_oauth_flow(
 async def oauth_callback(
     payload: OAuthCallbackRequest,
     gmail_service: GmailService = Depends(get_gmail_service),
-    supabase: SupabaseService = Depends(get_supabase_service),
+    supabase: DBService = Depends(get_db_service),
 ) -> OAuthCallbackResponse:
     """Process Gmail OAuth callback and persist Supabase tokens."""
     # Handle Composio-managed OAuth flow
@@ -104,7 +104,7 @@ async def oauth_callback(
 )
 async def get_oauth_status(
     user_id: UUID,
-    supabase: SupabaseService = Depends(get_supabase_service),
+    supabase: DBService = Depends(get_db_service),
 ) -> OAuthStatusResponse:
     """Return whether the user has an active Gmail connection."""
     tokens = await supabase.fetch_gmail_tokens(user_id)

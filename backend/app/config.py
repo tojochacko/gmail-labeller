@@ -17,10 +17,10 @@ class OAuthClient(BaseModel):
 class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
 
-    # Supabase
-    supabase_url: AnyHttpUrl = Field(..., alias="SUPABASE_URL")
-    supabase_service_role_key: SecretStr = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
-    supabase_anon_key: SecretStr = Field(..., alias="SUPABASE_ANON_KEY")
+    # Database
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./data/app.db", alias="DATABASE_URL"
+    )
 
     # Encryption
     fernet_secret_key: SecretStr = Field(..., alias="FERNET_SECRET_KEY")

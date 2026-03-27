@@ -14,7 +14,7 @@ from ..schemas.oauth import GmailTokens
 from .gmail_toolkit import GmailService
 from .pattern_learning_service import PatternLearningService
 from .pii_redactor import PIIRedactor
-from .supabase_service import SupabaseService
+from .db_service import DBService as SupabaseService
 
 
 logger = logging.getLogger(__name__)

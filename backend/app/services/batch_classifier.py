@@ -9,10 +9,10 @@ from uuid import UUID
 
 from ..schemas.agent import AgentRunRequest
 from .agent_service import AgentService
+from .db_service import DBService
 from .gmail_toolkit import GmailService
 from .local_email_filter import LocalEmailFilter
 from .session_repository import SessionRepository
-from .supabase_service import SupabaseService
 
 
 logger = logging.getLogger(__name__)
@@ -34,13 +34,13 @@ class BatchClassifier:
     def __init__(
         self,
         session_repo: SessionRepository,
-        supabase: SupabaseService,
+        db: DBService,
         agent_service: AgentService,
         gmail_service: GmailService,
         email_filter: LocalEmailFilter | None = None,
     ) -> None:
         self._repo = session_repo
-        self._supabase = supabase
+        self._supabase = db  # alias kept to avoid wider rename in run_batch
         self._agent_service = agent_service
         self._gmail_service = gmail_service
         self._email_filter = email_filter or LocalEmailFilter()

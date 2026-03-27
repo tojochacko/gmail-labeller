@@ -12,7 +12,7 @@ import logging
 from ..schemas.email import EmailItem
 from ..schemas.oauth import GmailTokens
 from .gmail_toolkit import GmailService
-from .supabase_service import SupabaseService
+from .db_service import DBService as SupabaseService
 
 
 logger = logging.getLogger(__name__)

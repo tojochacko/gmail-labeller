@@ -5,28 +5,34 @@ from __future__ import annotations
 from fastapi import Depends
 
 from .config import Settings, get_settings
+from .db.engine import make_engine, make_session_factory
 from .services import (
     AgentService,
     BatchClassifier,
     ClassificationSessionService,
+    DBService,
     EmailService,
     GmailService,
     GmailToolkitFactory,
     LabelService,
     PatternLearningService,
     SessionRepository,
-    SupabaseService,
 )
 
-_supabase_service: SupabaseService | None = None
+_db_service: DBService | None = None
 _gmail_service: GmailService | None = None
 
 
-def get_supabase_service(settings: Settings = Depends(get_settings)) -> SupabaseService:
-    global _supabase_service
-    if _supabase_service is None:
-        _supabase_service = SupabaseService(settings)
-    return _supabase_service
+def get_db_service(settings: Settings = Depends(get_settings)) -> DBService:
+    global _db_service
+    if _db_service is None:
+        engine = make_engine(settings.database_url)
+        factory = make_session_factory(engine)
+        _db_service = DBService(
+            session_factory=factory,
+            fernet_key=settings.fernet_secret_key.get_secret_value(),
+        )
+    return _db_service
 
 
 def get_gmail_service(settings: Settings = Depends(get_settings)) -> GmailService:
@@ -39,36 +45,36 @@ def get_gmail_service(settings: Settings = Depends(get_settings)) -> GmailServic
 
 def get_email_service(
     gmail_service: GmailService = Depends(get_gmail_service),
-    supabase: SupabaseService = Depends(get_supabase_service),
+    db: DBService = Depends(get_db_service),
     settings: Settings = Depends(get_settings),
 ) -> EmailService:
-    return EmailService(gmail_service, supabase, settings)
+    return EmailService(gmail_service, db, settings)
 
 
 def get_label_service(
     gmail_service: GmailService = Depends(get_gmail_service),
-    supabase: SupabaseService = Depends(get_supabase_service),
+    db: DBService = Depends(get_db_service),
 ) -> LabelService:
-    return LabelService(gmail_service, supabase)
+    return LabelService(gmail_service, db)
 
 
 def get_agent_service(
     settings: Settings = Depends(get_settings),
-    supabase: SupabaseService = Depends(get_supabase_service),
+    db: DBService = Depends(get_db_service),
 ) -> AgentService:
-    return AgentService(settings, supabase)
+    return AgentService(settings, db)
 
 
 def get_pattern_service(
-    supabase: SupabaseService = Depends(get_supabase_service),
+    db: DBService = Depends(get_db_service),
 ) -> PatternLearningService:
-    return PatternLearningService(supabase)
+    return PatternLearningService(db)
 
 
 def get_session_repository(
-    supabase: SupabaseService = Depends(get_supabase_service),
+    db: DBService = Depends(get_db_service),
 ) -> SessionRepository:
-    return SessionRepository(supabase.client)
+    return SessionRepository(db.session_factory)
 
 
 def get_classification_session_service(
@@ -80,8 +86,8 @@ def get_classification_session_service(
 
 def get_batch_classifier(
     session_repo: SessionRepository = Depends(get_session_repository),
-    supabase: SupabaseService = Depends(get_supabase_service),
+    db: DBService = Depends(get_db_service),
     agent_service: AgentService = Depends(get_agent_service),
     gmail_service: GmailService = Depends(get_gmail_service),
 ) -> BatchClassifier:
-    return BatchClassifier(session_repo, supabase, agent_service, gmail_service)
+    return BatchClassifier(session_repo, db, agent_service, gmail_service)
