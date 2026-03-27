@@ -92,6 +92,7 @@ class BatchClassifier:
                 email_id = _UUID(email_id_str)
 
                 # Check local rules first — may skip the LLM entirely.
+                llm_is_job_alert = False
                 filter_result = self._email_filter.check(email_row)
                 if filter_result.skip_llm:
                     suggestion = filter_result.label
@@ -123,6 +124,7 @@ class BatchClassifier:
                     suggestion = None
                     if result and result.result_payload:
                         suggestion = result.result_payload.get("suggestion")
+                        llm_is_job_alert = bool(result.result_payload.get("is_job_alert", False))
                         logger.info(
                             "LLM response for '%s': %s",
                             subject[:60],
@@ -144,12 +146,13 @@ class BatchClassifier:
                             "Failed to apply Gmail label for %s: %s", gmail_message_id, label_err
                         )
 
-                # Apply ai-job-alert tag if detected
-                if tokens and self._job_alert_detector.is_job_alert(
+                # Apply ai-job-alert tag if detected by rule-based detector or LLM
+                rule_based_job_alert = self._job_alert_detector.is_job_alert(
                     subject=email_row.get("subject", ""),
                     sender_email=email_row.get("sender_email", ""),
                     snippet=email_row.get("snippet") or "",
-                ):
+                )
+                if tokens and (rule_based_job_alert or llm_is_job_alert):
                     try:
                         await self._gmail_service.apply_label(
                             message_id=gmail_message_id,
@@ -204,6 +207,7 @@ def _build_classification_prompt(email_row: dict) -> str:
         f"From: {sender}\n"
         f"Snippet: {snippet}\n\n"
         "Classify this email as 'Important' or 'Not Important'.\n"
+        "Also determine if this is a job posting, recruiter outreach, or automated job board alert.\n"
         'Respond in JSON: {"suggestion": "Important|Not Important", '
-        '"confidence": 0.0-1.0, "reasoning": "..."}'
+        '"confidence": 0.0-1.0, "reasoning": "...", "is_job_alert": true|false}'
     )

@@ -39,43 +39,27 @@ Added automatic `ai-job-alert` Gmail label applied on top of Important/Not Impor
 - `BatchClassifier` updated: after main label applied, runs detector; if matched, calls `apply_label("ai-job-alert")`
 - 16 unit tests for `JobAlertDetector`, 2 integration tests for `BatchClassifier`
 
+### 5. Double-layer Job Alert Detection
+Added LLM as a second detection layer alongside the existing rule-based detector:
+- `_build_classification_prompt()` now requests `is_job_alert: true|false` in the JSON response, asking specifically about "job posting, recruiter outreach, or automated job board alert"
+- `run_batch()` extracts `llm_is_job_alert` from the LLM result payload
+- `ai-job-alert` tag applied if **either** the rule-based detector OR the LLM returns `is_job_alert: true`
+- When `LocalEmailFilter` skips LLM, only rule-based detection applies (acceptable — those emails are never job alerts)
+- 1 new test: LLM-only detection (recruiter outreach not matching domain/keyword rules)
+
 ---
 
 ## Current State
 
 - **Branch:** `main`
-- **Tests:** 95/95 passing in Docker container
+- **Tests:** 96/96 passing in Docker container
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
 
 ---
 
 ## Recommended Next Steps
 
-### Priority 1 — Enhance job alert detection with LLM layer
-
-**Context:** The current `JobAlertDetector` is rule-based (domain + keywords). The user proposed adding a second detection layer using the LLM, giving the system more confidence via two independent signals.
-
-**Design agreed upon:**
-- Keep rule-based detection as the fast path (catches clear cases without LLM)
-- Update the LLM classification prompt to also return `is_job_alert: true/false`
-- Apply `ai-job-alert` if **either** the rule-based detector fires OR the LLM returns `is_job_alert: true`
-- When `LocalEmailFilter` skips the LLM (bank statements, OTPs), rule-based detection is the only layer — acceptable since those emails are not job alerts
-
-**Important prompt guidance:** Ask specifically "Is this a job posting, recruiter outreach, or automated job board alert?" — not "is this job-related?" (too broad).
-
-**Files to change:**
-- `backend/app/services/batch_classifier.py`:
-  - Update `_build_classification_prompt()` to request `is_job_alert` in the JSON response
-  - Extract `is_job_alert` from LLM result alongside `suggestion`
-  - Update tag condition: `rule_based OR llm_is_job_alert`
-- `backend/tests/test_batch_classifier.py` — add test for LLM-detected job alert (rule-based doesn't fire, but LLM returns `is_job_alert: true`)
-- No changes needed to `JobAlertDetector`, `gmail_toolkit.py`, or any other file
-
-**Effort:** Small (~20 lines of logic, 3 new tests)
-
-**Implementation plan:** No formal plan doc needed — small enough to implement directly with subagent-driven development.
-
-### Priority 2 — End-to-end testing
+### Priority 1 — End-to-end testing
 The OAuth flow uses real Google credentials. Before production:
 1. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` in `config/.env`
 2. Verify redirect URI is registered in Google Cloud Console

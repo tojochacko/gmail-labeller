@@ -81,6 +81,43 @@ async def test_job_alert_label_applied_in_addition_to_main_label(
 
 
 @pytest.mark.asyncio
+async def test_llm_only_job_alert_label_applied(
+    mock_repo, mock_db, mock_gmail_service, mock_agent_service
+) -> None:
+    """LLM is_job_alert=true should apply ai-job-alert even if rule-based detector doesn't fire."""
+    # Email that looks like a recruiter outreach but doesn't match domain/keyword rules
+    recruiter_email = {
+        "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "gmail_message_id": "gmail-msg-789",
+        "subject": "Exciting opportunity we'd love to discuss with you",
+        "snippet": "Hi, I came across your profile and think you'd be a great fit for our team.",
+        "sender_email": "recruiter@techcorp.io",
+        "sender_domain": "techcorp.io",
+    }
+    mock_repo.fetch_session_emails = AsyncMock(return_value=[recruiter_email])
+
+    # LLM returns is_job_alert: true despite no rule-based match
+    result = MagicMock()
+    result.result_payload = {"suggestion": "Important", "confidence": 0.8, "is_job_alert": True}
+    mock_agent_service.get_agent_run = AsyncMock(return_value=result)
+
+    classifier = BatchClassifier(
+        session_repo=mock_repo,
+        db=mock_db,
+        agent_service=mock_agent_service,
+        gmail_service=mock_gmail_service,
+    )
+
+    await classifier.run_batch(session_id=SESSION_ID, user_id=USER_ID)
+
+    call_labels = [
+        call.kwargs.get("label_id") or call.args[1]
+        for call in mock_gmail_service.apply_label.call_args_list
+    ]
+    assert "ai-job-alert" in call_labels
+
+
+@pytest.mark.asyncio
 async def test_non_job_alert_does_not_get_tag(
     mock_repo, mock_db, mock_gmail_service, mock_agent_service
 ) -> None:
