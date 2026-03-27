@@ -203,8 +203,6 @@ def client(
             "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
             "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
             "AGENT_RUNTIME_BASE_URL": "http://localhost:9000",
-            "COMPOSIO_API_KEY": "cmp-test",
-            "COMPOSIO_ACCOUNT_ID": "account-123",
             "GOOGLE_OAUTH_CLIENT_ID": "client-id",
             "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
             "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost:3005/oauth/callback",

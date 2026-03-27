@@ -18,9 +18,7 @@ class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
 
     # Database
-    database_url: str = Field(
-        default="sqlite+aiosqlite:///./data/app.db", alias="DATABASE_URL"
-    )
+    database_url: str = Field(default="sqlite+aiosqlite:///./data/app.db", alias="DATABASE_URL")
 
     # Encryption
     fernet_secret_key: SecretStr = Field(..., alias="FERNET_SECRET_KEY")
@@ -29,10 +27,6 @@ class Settings(BaseSettings):
     agent_runtime_base_url: Optional[AnyHttpUrl] = Field(
         default=None, alias="AGENT_RUNTIME_BASE_URL"
     )
-
-    # Composio
-    composio_api_key: SecretStr = Field(..., alias="COMPOSIO_API_KEY")
-    composio_account_id: str = Field(..., alias="COMPOSIO_ACCOUNT_ID")
 
     # Gmail OAuth
     google_oauth_client_id: str = Field(..., alias="GOOGLE_OAUTH_CLIENT_ID")
