@@ -1,9 +1,13 @@
-"""Adapter layer around the Composio Gmail toolkit."""
+"""Adapter layer for the Gmail API (direct Google integration)."""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
 
 from ..config import Settings
 from ..schemas.oauth import GmailTokens
@@ -11,373 +15,216 @@ from ..schemas.oauth import GmailTokens
 
 logger = logging.getLogger(__name__)
 
+_LABEL_MAPPING = {
+    "Important": "TImportant",
+    "Not Important": "TNotImportant",
+}
+_OPPOSITE_LABEL = {
+    "TImportant": "TNotImportant",
+    "TNotImportant": "TImportant",
+}
+_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
-class ComposioGmailAdapter:
-    """Adapter that wraps Composio SDK for Gmail operations using Composio 1.0 API."""
 
-    def __init__(self, api_key: str, auth_config_id: str) -> None:
-        """Initialize the Composio Gmail adapter.
+class GmailApiAdapter:
+    """Direct Gmail API adapter using google-api-python-client."""
 
-        Args:
-            api_key: Composio API key
-            auth_config_id: Auth config ID for Gmail OAuth configuration
-        """
-        try:
-            from composio import Composio
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("Composio SDK is not installed. Install `composio>=0.8.0`.") from exc
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        scopes: list[str],
+    ) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._redirect_uri = redirect_uri
+        self._scopes = scopes
 
-        self._client: Composio = Composio(api_key=api_key)
-        self._auth_config_id = auth_config_id
+    # ── OAuth helpers ──────────────────────────────────────────────────────
 
-    async def get_authorization_url(self, redirect_uri: str, state: str, user_id: str) -> str:
-        """Get OAuth authorization URL for Gmail.
-
-        Args:
-            redirect_uri: Redirect URI for OAuth callback
-            state: OAuth state parameter for CSRF protection
-            user_id: User's UUID to use as user_id in Composio
-
-        Returns:
-            Authorization URL for user to visit
-        """
-        # Initiate connection for this user (use actual user_id)
-        logger.debug(f"Initiating Composio connection for user_id: {user_id}")
-        connection_request = self._client.connected_accounts.initiate(
-            user_id=user_id,  # Use actual user UUID as user_id in Composio
-            auth_config_id=self._auth_config_id,
-            callback_url=redirect_uri,
-        )
-        logger.debug(f"Connection initiated, redirect_url: {connection_request.redirect_url}")
-        redirect_url = connection_request.redirect_url
-        if redirect_url is None:
-            raise RuntimeError("Failed to get redirect URL from Composio")
-        return redirect_url
-
-    async def exchange_code_for_tokens(self, code: str, redirect_uri: str) -> dict:
-        """Exchange authorization code for access tokens.
-
-        Note: With Composio 1.0, the token exchange happens automatically when the
-        user completes OAuth. This method waits for the connection to be established.
-
-        Args:
-            code: Authorization code (used as user_id in Composio)
-            redirect_uri: Redirect URI (not used with Composio's managed auth)
-
-        Returns:
-            Dictionary with token information
-        """
-        # In Composio 1.0, we don't need to manually exchange codes
-        # The connection is established automatically via the OAuth callback
-        # We just return a placeholder that indicates success
-        return {
-            "access_token": "composio_managed",
-            "refresh_token": "composio_managed",
-            # expires_at omitted - will use default from GmailTokens model
-            "scope": "gmail.modify",
-            "token_type": "Bearer",
-            # id_token omitted - optional field
+    def _flow(self) -> Flow:
+        config = {
+            "web": {
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": _TOKEN_URI,
+                "redirect_uris": [self._redirect_uri],
+            }
         }
+        flow = Flow.from_client_config(config, scopes=self._scopes)
+        flow.redirect_uri = self._redirect_uri
+        return flow
 
-    async def list_messages(
+    def _credentials(self, access_token: str, refresh_token: str) -> Credentials:
+        return Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri=_TOKEN_URI,
+            client_id=self._client_id,
+            client_secret=self._client_secret,
+            scopes=self._scopes,
+        )
+
+    def _service(self, access_token: str, refresh_token: str):
+        creds = self._credentials(access_token, refresh_token)
+        return build("gmail", "v1", credentials=creds)
+
+    # ── Public API ─────────────────────────────────────────────────────────
+
+    def get_authorization_url(self, state: str) -> str:
+        """Return a Google OAuth2 authorization URL."""
+        url, _ = self._flow().authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            state=state,
+            prompt="consent",
+        )
+        logger.debug("Generated authorization URL (state=%s)", state)
+        return url
+
+    def exchange_code_for_tokens(self, code: str) -> dict:
+        """Exchange an authorization code for OAuth tokens.
+
+        Returns:
+            Dict with access_token, refresh_token, token_type, scope.
+        """
+        flow = self._flow()
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        result: dict = {
+            "access_token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_type": "Bearer",
+        }
+        if creds.expiry:
+            result["expires_at"] = creds.expiry.isoformat()
+        if creds.scopes:
+            result["scope"] = " ".join(creds.scopes)
+        logger.debug("Exchanged code for tokens successfully")
+        return result
+
+    def list_messages(
         self,
         access_token: str,
         refresh_token: str,
         max_results: int = 20,
-        user_id: str | None = None,
         query: str | None = None,
+        user_id: str | None = None,  # kept for interface compatibility, not used
     ) -> list[dict]:
-        """List Gmail messages for the user.
+        """List Gmail messages, returning full metadata for each."""
+        svc = self._service(access_token, refresh_token)
+        q = query or "in:inbox"
 
-        Args:
-            access_token: Connection ID from Composio (stored as access_token)
-            refresh_token: Not used (Composio uses connection internally)
-            max_results: Maximum number of messages to return
-            user_id: User's UUID (used as user_id in Composio)
-            query: Gmail search query (e.g., "in:inbox", "is:unread", or empty for all)
-
-        Returns:
-            List of message dictionaries
-        """
-        # Debug: Log user_id and list connected accounts
-        logger.debug(f"Fetching emails for user_id: {user_id}")
-        try:
-            accounts = self._client.connected_accounts.list(user_ids=[user_id])
-            logger.debug(f"Connected accounts for user {user_id}: {accounts}")
-            if hasattr(accounts, "items"):
-                logger.debug(f"Number of connected accounts: {len(accounts.items)}")
-                for acc in accounts.items:
-                    logger.debug(f"  - Account ID: {acc.id}, Status: {acc.status}")
-        except Exception as e:
-            logger.warning(f"Failed to list connected accounts: {e}")
-
-        # Use user_id to let Composio automatically find the connected account
-        # This avoids entity_id mismatch errors
-        logger.debug(f"Calling GMAIL_FETCH_EMAILS with max_results={max_results}, query={query}")
-
-        # Build arguments - try with query parameter
-        arguments: dict[str, int | str] = {
-            "max_results": max_results,
-        }
-
-        # Add query if provided, otherwise try "in:inbox" to get inbox emails
-        # If query is explicitly empty string, don't add it (to get all emails)
-        if query is not None:
-            arguments["query"] = query
-        else:
-            # Default to inbox emails
-            arguments["query"] = "in:inbox"
-            logger.debug("Using default query: 'in:inbox'")
-
-        logger.debug(f"GMAIL_FETCH_EMAILS arguments: {arguments}")
-        result = self._client.tools.execute(
-            slug="GMAIL_FETCH_EMAILS",
-            arguments=arguments,
-            user_id=user_id,  # Composio will look up the connected account for this user
+        response = (
+            svc.users()
+            .messages()
+            .list(userId="me", q=q, maxResults=max_results)
+            .execute()
         )
-
-        # Debug: Log the raw result
-        logger.debug(f"GMAIL_FETCH_EMAILS result type: {type(result)}")
-
-        # Handle both object (from mock/SDK) and dict (from actual Composio response)
-        # Try object attribute access first (.data)
-        if hasattr(result, "data"):
-            logger.debug("Result has .data attribute (object type)")
-            data = result.data  # type: ignore[attr-defined]
-        # Try dict key access (["data"])
-        elif isinstance(result, dict) and "data" in result:
-            logger.debug("Result has ['data'] key (dict type)")
-            data = result["data"]
-        else:
-            logger.error(f"Result has no .data attribute or ['data'] key. Type: {type(result)}")
-            if isinstance(result, dict):
-                logger.debug(f"Available keys: {list(result.keys())}")
+        message_stubs = response.get("messages", [])
+        if not message_stubs:
             return []
 
-        logger.debug(f"data type: {type(data)}")
-
-        # Handle None case
-        if data is None:
-            logger.warning("data is None")
-            return []
-
-        # data should be a dict with "messages" key (production Composio response)
-        if isinstance(data, dict):
-            logger.debug(
-                f"data is dict with keys: {data.keys() if hasattr(data, 'keys') else 'N/A'}"
+        messages = []
+        for stub in message_stubs:
+            msg = (
+                svc.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=stub["id"],
+                    format="metadata",
+                    metadataHeaders=["Subject", "From", "Date"],
+                )
+                .execute()
             )
+            messages.append(msg)
 
-            if "messages" in data:
-                messages = data["messages"]
-                logger.info(f"✅ Found {len(messages)} messages in data['messages']")
-                if messages and len(messages) > 0:
-                    logger.debug(f"First message subject: {messages[0].get('subject', 'N/A')}")
-                    logger.debug(f"First message keys: {list(messages[0].keys())}")
-                    logger.debug(f"First message sample: {messages[0]}")
-                return messages if isinstance(messages, list) else [messages]
-            else:
-                logger.warning(f"data dict has no 'messages' key. Keys: {list(data.keys())}")
-                return []
+        logger.info("Fetched %d messages", len(messages))
+        return messages
 
-        # Fallback: data is a list directly (some SDK versions)
-        if isinstance(data, list):
-            logger.info(f"✅ Returning {len(data)} messages (data is direct list)")
-            return data
-
-        logger.warning(f"Unexpected data type: {type(data)}")
-        return []
-
-    async def get_message(
+    def get_message(
         self,
         message_id: str,
         access_token: str,
         refresh_token: str,
         user_id: str | None = None,
     ) -> dict | None:
-        """Get a single Gmail message by ID.
-
-        Args:
-            message_id: Gmail message ID to fetch
-            access_token: Connection ID from Composio (stored as access_token)
-            refresh_token: Not used (Composio uses connection internally)
-            user_id: User's UUID (used as user_id in Composio)
-
-        Returns:
-            Message dictionary or None if not found
-        """
-        logger.debug(f"Fetching single message {message_id} for user_id: {user_id}")
-
-        arguments = {
-            "message_id": message_id,
-        }
-
+        """Fetch a single Gmail message by ID."""
         try:
-            result = self._client.tools.execute(
-                slug="GMAIL_FETCH_EMAIL",
-                arguments=arguments,
-                user_id=user_id,
+            svc = self._service(access_token, refresh_token)
+            msg = (
+                svc.users()
+                .messages()
+                .get(userId="me", id=message_id, format="full")
+                .execute()
             )
-
-            # Handle both object and dict responses
-            if hasattr(result, "data"):
-                data = result.data  # type: ignore[attr-defined]
-            elif isinstance(result, dict) and "data" in result:
-                data = result["data"]
-            else:
-                logger.error(f"Unexpected result format: {type(result)}")
-                return None
-
-            if data and isinstance(data, dict):
-                logger.info(f"✅ Fetched message {message_id}")
-                return dict(data)  # Cast to dict to satisfy mypy
-            else:
-                logger.warning(f"Message {message_id} not found or invalid format")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error fetching message {message_id}: {e}")
+            logger.debug("Fetched message %s", message_id)
+            return msg
+        except Exception as exc:
+            logger.error("Error fetching message %s: %s", message_id, exc)
             return None
 
-    async def list_labels(
+    def list_labels(
         self,
         access_token: str,
         refresh_token: str,
         user_id: str | None = None,
     ) -> list[dict]:
-        """List all Gmail labels for the user.
+        """List all Gmail labels for the authenticated user."""
+        svc = self._service(access_token, refresh_token)
+        response = svc.users().labels().list(userId="me").execute()
+        labels = response.get("labels", [])
+        logger.debug("Found %d labels", len(labels))
+        return labels
 
-        Args:
-            access_token: Connection ID from Composio (stored as access_token)
-            refresh_token: Not used (Composio uses connection internally)
-            user_id: User's UUID (used as user_id in Composio)
-
-        Returns:
-            List of label dictionaries with 'id' and 'name' fields
-        """
-        logger.debug(f"Listing labels for user_id: {user_id}")
-
-        result = self._client.tools.execute(
-            slug="GMAIL_LIST_LABELS",
-            arguments={},
-            user_id=user_id,
-        )
-
-        # Handle both object (from mock/SDK) and dict (from actual Composio response)
-        if hasattr(result, "data"):
-            data = result.data  # type: ignore[attr-defined]
-        elif isinstance(result, dict) and "data" in result:
-            data = result["data"]
-        else:
-            logger.error(f"Unexpected result format: {type(result)}")
-            return []
-
-        # Extract labels array
-        if isinstance(data, dict) and "labels" in data:
-            labels = data["labels"]
-            logger.info(f"Found {len(labels)} labels")
-            return labels if isinstance(labels, list) else [labels]
-        elif isinstance(data, list):
-            logger.info(f"Found {len(data)} labels (direct list)")
-            return data
-
-        logger.warning(f"No labels found in response. Data type: {type(data)}")
-        return []
-
-    async def create_label(
+    def create_label(
         self,
         label_name: str,
         access_token: str,
         refresh_token: str,
         user_id: str | None = None,
     ) -> str:
-        """Create a new Gmail label.
-
-        Args:
-            label_name: Name of the label to create
-            access_token: Connection ID from Composio (stored as access_token)
-            refresh_token: Not used (Composio uses connection internally)
-            user_id: User's UUID (used as user_id in Composio)
-
-        Returns:
-            Created label ID
-
-        Raises:
-            RuntimeError: If label creation fails
-        """
-        logger.debug(f"Creating label '{label_name}' for user_id: {user_id}")
-
-        arguments = {
-            "label_name": label_name,
-            "message_list_visibility": "show",
-            "label_list_visibility": "labelShow",
+        """Create a Gmail label and return its ID."""
+        svc = self._service(access_token, refresh_token)
+        body = {
+            "name": label_name,
+            "messageListVisibility": "show",
+            "labelListVisibility": "labelShow",
         }
-
-        result = self._client.tools.execute(
-            slug="GMAIL_CREATE_LABEL",
-            arguments=arguments,
-            user_id=user_id,
-        )
-
-        # Handle both object and dict responses
-        if hasattr(result, "data"):
-            data = result.data  # type: ignore[attr-defined]
-        elif isinstance(result, dict) and "data" in result:
-            data = result["data"]
-        else:
-            raise RuntimeError(f"Failed to create label: unexpected result format {type(result)}")
-
-        # Extract label ID from response
-        if isinstance(data, dict) and "id" in data:
-            label_id = data["id"]
-            logger.info(f"✅ Created label '{label_name}' with ID: {label_id}")
-            return str(label_id)  # Cast to str to satisfy mypy
-        else:
+        result = svc.users().labels().create(userId="me", body=body).execute()
+        label_id = result.get("id")
+        if not label_id:
             raise RuntimeError(f"Failed to create label '{label_name}': no ID in response")
+        logger.info("Created label '%s' with ID %s", label_name, label_id)
+        return str(label_id)
 
-    async def get_or_create_label(
+    def get_or_create_label(
         self,
         label_name: str,
         access_token: str,
         refresh_token: str,
         user_id: str | None = None,
     ) -> str:
-        """Get existing label ID by name, or create it if it doesn't exist.
-
-        Args:
-            label_name: Name of the label to get or create
-            access_token: Connection ID from Composio (stored as access_token)
-            refresh_token: Not used (Composio uses connection internally)
-            user_id: User's UUID (used as user_id in Composio)
-
-        Returns:
-            Label ID (existing or newly created)
-        """
-        logger.debug(f"Getting or creating label '{label_name}' for user_id: {user_id}")
-
-        # First, try to find existing label
-        labels = await self.list_labels(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            user_id=user_id,
+        """Return existing label ID by name, or create it."""
+        labels = self.list_labels(
+            access_token=access_token, refresh_token=refresh_token
         )
-
-        # Search for label by name (case-insensitive)
         for label in labels:
-            if isinstance(label, dict) and label.get("name", "").lower() == label_name.lower():
-                label_id = label.get("id")
-                logger.info(f"✅ Found existing label '{label_name}' with ID: {label_id}")
-                return str(label_id)  # Cast to str to satisfy mypy
+            if label.get("name", "").lower() == label_name.lower():
+                logger.debug("Found existing label '%s' = %s", label_name, label["id"])
+                return str(label["id"])
 
-        # Label doesn't exist, create it
-        logger.info(f"Label '{label_name}' not found, creating new one")
-        return await self.create_label(
+        logger.info("Label '%s' not found, creating", label_name)
+        return self.create_label(
             label_name=label_name,
             access_token=access_token,
             refresh_token=refresh_token,
-            user_id=user_id,
         )
 
-    async def apply_label(
+    def apply_label(
         self,
         message_id: str,
         label_name: str,
@@ -385,138 +232,82 @@ class ComposioGmailAdapter:
         refresh_token: str,
         user_id: str | None = None,
     ) -> None:
-        """Apply a label to a Gmail message.
+        """Apply a classification label to a Gmail message.
 
-        Args:
-            message_id: Gmail message ID
-            label_name: Label name to apply (e.g., "Important", "Not Important")
-            access_token: Connection ID from Composio (stored as access_token)
-            refresh_token: Not used (Composio uses connection internally)
-            user_id: User's UUID (used as user_id in Composio)
+        Maps "Important" -> "TImportant" and "Not Important" -> "TNotImportant".
+        For unrecognised label names (e.g. "ai-job-alert"), applies as-is.
+        Removes the opposite classification label and INBOX to archive the email.
         """
-        # Map to AI-prefixed custom labels
-        label_mapping = {
-            "Important": "TImportant",
-            "Not Important": "TNotImportant",
-        }
-        custom_label_name = label_mapping.get(label_name, label_name)
+        custom_name = _LABEL_MAPPING.get(label_name, label_name)
+        logger.info("Applying label '%s' to message %s", custom_name, message_id)
 
-        logger.info(
-            f"Applying label '{custom_label_name}' (from '{label_name}') "
-            f"to message {message_id} for user_id: {user_id}"
-        )
-
-        # Get or create the label and retrieve its ID
-        label_id = await self.get_or_create_label(
-            label_name=custom_label_name,
+        label_id = self.get_or_create_label(
+            label_name=custom_name,
             access_token=access_token,
             refresh_token=refresh_token,
-            user_id=user_id,
         )
 
-        # Determine opposite label to remove for clean state
-        remove_label_name = None
-        if label_name == "Important":
-            remove_label_name = "TNotImportant"
-        elif label_name == "Not Important":
-            remove_label_name = "TImportant"
-
-        # Get opposite label ID if it exists (don't create it)
-        remove_label_ids = []
-        if remove_label_name:
-            labels = await self.list_labels(
-                access_token=access_token,
-                refresh_token=refresh_token,
-                user_id=user_id,
+        remove_ids: list[str] = ["INBOX"]
+        opposite_name = _OPPOSITE_LABEL.get(custom_name)
+        if opposite_name:
+            existing = self.list_labels(
+                access_token=access_token, refresh_token=refresh_token
             )
-            for label in labels:
-                if isinstance(label, dict) and label.get("name") == remove_label_name:
-                    remove_label_ids.append(label["id"])
-                    logger.debug(
-                        f"Will remove opposite label '{remove_label_name}' (ID: {label['id']})"
-                    )
+            for lbl in existing:
+                if lbl.get("name") == opposite_name:
+                    remove_ids.append(lbl["id"])
                     break
 
-        # Always remove INBOX so classified emails leave the inbox
-        remove_label_ids.append("INBOX")
+        svc = self._service(access_token, refresh_token)
+        body = {"addLabelIds": [label_id], "removeLabelIds": remove_ids}
+        svc.users().messages().modify(userId="me", id=message_id, body=body).execute()
+        logger.info("Applied '%s' to message %s", custom_name, message_id)
 
-        # Build API arguments
-        arguments = {
-            "message_id": message_id,
-            "add_label_ids": [label_id],
-            "remove_label_ids": remove_label_ids,
-        }
 
-        logger.debug(f"Executing GMAIL_ADD_LABEL_TO_EMAIL with arguments: {arguments}")
-
-        # Execute the API call
-        self._client.tools.execute(
-            slug="GMAIL_ADD_LABEL_TO_EMAIL",
-            arguments=arguments,
-            user_id=user_id,
-        )
-
-        logger.info(f"✅ Successfully applied label '{custom_label_name}' to message {message_id}")
+# ── Factory ───────────────────────────────────────────────────────────────
 
 
 @dataclass
 class GmailToolkitFactory:
-    """Factory responsible for instantiating the Composio Gmail adapter."""
+    """Builds a GmailApiAdapter from application settings."""
 
     settings: Settings
 
-    def build(self) -> ComposioGmailAdapter:
-        """Build and return a Composio Gmail adapter instance.
+    def build(self) -> GmailApiAdapter:
+        return GmailApiAdapter(
+            client_id=self.settings.google_oauth_client_id,
+            client_secret=self.settings.google_oauth_client_secret.get_secret_value(),
+            redirect_uri=str(self.settings.google_oauth_redirect_uri),
+            scopes=[self.settings.google_oauth_scope],
+        )
 
-        Returns:
-            Configured ComposioGmailAdapter instance
-        """
-        api_key = self.settings.composio_api_key.get_secret_value()
-        # In Composio 1.0, composio_account_id is now the auth_config_id
-        auth_config_id = self.settings.composio_account_id
 
-        return ComposioGmailAdapter(api_key=api_key, auth_config_id=auth_config_id)
+# ── Service (domain logic, unchanged interface) ───────────────────────────
 
 
 class GmailService:
     """Domain logic around OAuth, email fetching, and label application."""
 
-    def __init__(
-        self,
-        adapter: ComposioGmailAdapter,
-        settings: Settings,
-    ) -> None:
+    def __init__(self, adapter: GmailApiAdapter, settings: Settings) -> None:
         self._adapter = adapter
         self._settings = settings
 
     async def create_authorization_url(self, state: str, user_id: str) -> str:
-        logger.debug("Generating Gmail OAuth URL with state %s for user %s", state, user_id)
-        return await self._adapter.get_authorization_url(
-            redirect_uri=str(self._settings.google_oauth_redirect_uri),
-            state=state,
-            user_id=user_id,
-        )
+        logger.debug("Generating Gmail OAuth URL for user %s", user_id)
+        return self._adapter.get_authorization_url(state=state)
 
     async def exchange_code_for_tokens(self, code: str) -> GmailTokens:
         logger.debug("Exchanging authorization code for tokens")
-        raw_tokens = await self._adapter.exchange_code_for_tokens(
-            code=code,
-            redirect_uri=str(self._settings.google_oauth_redirect_uri),
-        )
-        # Build token dict, only including fields that are present
-        token_data = {
-            "access_token": raw_tokens["access_token"],
-            "refresh_token": raw_tokens["refresh_token"],
-            "token_type": raw_tokens.get("token_type", "Bearer"),
+        raw = self._adapter.exchange_code_for_tokens(code=code)
+        token_data: dict = {
+            "access_token": raw["access_token"],
+            "refresh_token": raw["refresh_token"],
+            "token_type": raw.get("token_type", "Bearer"),
         }
-        # Add optional fields only if present
-        if "expires_at" in raw_tokens and raw_tokens["expires_at"] is not None:
-            token_data["expires_at"] = raw_tokens["expires_at"]
-        if "scope" in raw_tokens and raw_tokens["scope"] is not None:
-            token_data["scope"] = raw_tokens["scope"]
-        if "id_token" in raw_tokens and raw_tokens["id_token"] is not None:
-            token_data["id_token"] = raw_tokens["id_token"]
-
+        if raw.get("expires_at"):
+            token_data["expires_at"] = raw["expires_at"]
+        if raw.get("scope"):
+            token_data["scope"] = raw["scope"]
         return GmailTokens(**token_data)
 
     async def list_messages(
@@ -526,31 +317,16 @@ class GmailService:
         max_results: int = 20,
         query: str | None = None,
     ) -> list[dict]:
-        logger.debug(
-            "Listing Gmail messages for user %s, max_results=%s, query=%s",
-            user_id,
-            max_results,
-            query,
-        )
-        return await self._adapter.list_messages(
+        return self._adapter.list_messages(
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
             max_results=max_results,
-            user_id=user_id,
             query=query,
+            user_id=user_id,
         )
 
     async def list_labels(self, tokens: GmailTokens, user_id: str) -> list[dict]:
-        """List all Gmail labels for the user.
-
-        Args:
-            tokens: Gmail OAuth tokens
-            user_id: User's UUID
-
-        Returns:
-            List of label dicts with 'id' and 'name' fields
-        """
-        return await self._adapter.list_labels(
+        return self._adapter.list_labels(
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
             user_id=user_id,
@@ -563,23 +339,9 @@ class GmailService:
         tokens: GmailTokens,
         user_id: str,
     ) -> None:
-        """Apply a label to a Gmail message.
-
-        Args:
-            message_id: Gmail message ID
-            label_id: Label name to apply (despite the parameter name, this is actually a label name
-                     like "Important" or "Not Important", not an ID)
-            tokens: Gmail OAuth tokens
-            user_id: User's UUID
-
-        Note:
-            The adapter will automatically map label names to "TImportant" and "TNotImportant"
-            and resolve them to actual Gmail label IDs.
-        """
-        logger.debug("Applying label %s to message %s for user %s", label_id, message_id, user_id)
-        await self._adapter.apply_label(
+        self._adapter.apply_label(
             message_id=message_id,
-            label_name=label_id,  # Changed from label_id to label_name for clarity
+            label_name=label_id,
             access_token=tokens.access_token.get_secret_value(),
             refresh_token=tokens.refresh_token.get_secret_value(),
             user_id=user_id,
