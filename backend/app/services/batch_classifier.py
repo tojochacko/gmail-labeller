@@ -11,6 +11,7 @@ from ..schemas.agent import AgentRunRequest
 from .agent_service import AgentService
 from .db_service import DBService
 from .gmail_toolkit import GmailService
+from .job_alert_detector import JobAlertDetector
 from .local_email_filter import LocalEmailFilter
 from .session_repository import SessionRepository
 
@@ -38,12 +39,14 @@ class BatchClassifier:
         agent_service: AgentService,
         gmail_service: GmailService,
         email_filter: LocalEmailFilter | None = None,
+        job_alert_detector: JobAlertDetector | None = None,
     ) -> None:
         self._repo = session_repo
         self._supabase = db  # alias kept to avoid wider rename in run_batch
         self._agent_service = agent_service
         self._gmail_service = gmail_service
         self._email_filter = email_filter or LocalEmailFilter()
+        self._job_alert_detector = job_alert_detector or JobAlertDetector()
 
     async def run_batch(self, session_id: UUID, user_id: UUID) -> BatchResult:
         """Classify all unlabeled emails in the session sequentially.
@@ -139,6 +142,27 @@ class BatchClassifier:
                     except Exception as label_err:
                         logger.warning(
                             "Failed to apply Gmail label for %s: %s", gmail_message_id, label_err
+                        )
+
+                # Apply ai-job-alert tag if detected
+                if tokens and self._job_alert_detector.is_job_alert(
+                    subject=email_row.get("subject", ""),
+                    sender_email=email_row.get("sender_email", ""),
+                    snippet=email_row.get("snippet") or "",
+                ):
+                    try:
+                        await self._gmail_service.apply_label(
+                            message_id=gmail_message_id,
+                            label_id="ai-job-alert",
+                            tokens=tokens,
+                            user_id=str(user_id),
+                        )
+                        logger.info("Applied 'ai-job-alert' tag to %s", gmail_message_id)
+                    except Exception as tag_err:
+                        logger.warning(
+                            "Failed to apply ai-job-alert tag for %s: %s",
+                            gmail_message_id,
+                            tag_err,
                         )
 
                 classified += 1

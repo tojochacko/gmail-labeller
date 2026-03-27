@@ -2,6 +2,7 @@
 
 from .agent_service import AgentService
 from .batch_classifier import BatchClassifier
+from .job_alert_detector import JobAlertDetector
 from .classification_session_service import ClassificationSessionService
 from .db_service import DBService
 from .email_service import EmailService
@@ -17,6 +18,7 @@ __all__ = [
     "DBService",
     "EmailService",
     "GmailApiAdapter",
+    "JobAlertDetector",
     "GmailService",
     "GmailToolkitFactory",
     "LabelService",
