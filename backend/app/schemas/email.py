@@ -18,7 +18,7 @@ LabelType = Literal["Important", "Not Important"]
 
 
 class EmailItem(BaseModel):
-    """Represents an email fetched from Gmail via Composio."""
+    """Represents an email fetched from Gmail."""
 
     model_config = ConfigDict(
         alias_generator=to_camel,

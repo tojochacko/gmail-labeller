@@ -92,30 +92,13 @@ class EmailService:
         # Log raw message structure for debugging
         logger.debug(f"Parsing email with keys: {list(message.keys())}")
 
-        # Composio returns simplified format with subject at top level
-        # Check both formats: raw Gmail API vs Composio simplified
-        if "subject" in message:
-            # Composio format: subject at top level
-            subject = message.get("subject", "(no subject)")
-            received_at = message.get("received_at") or datetime.now(timezone.utc)
-            if isinstance(received_at, str):
-                from email.utils import parsedate_to_datetime
+        # Raw Gmail API format: subject in headers
+        headers = self._normalize_headers(message.get("payload", {}).get("headers", []))
+        subject = headers.get("subject", "(no subject)")
+        received_at = self._extract_received_at(headers) or datetime.now(timezone.utc)
 
-                try:
-                    received_at = parsedate_to_datetime(received_at)
-                except (ValueError, TypeError):
-                    received_at = datetime.now(timezone.utc)
-
-            # Extract sender from Composio format
-            sender_email = message.get("sender") or message.get("from")
-        else:
-            # Raw Gmail API format: subject in headers
-            headers = self._normalize_headers(message.get("payload", {}).get("headers", []))
-            subject = headers.get("subject", "(no subject)")
-            received_at = self._extract_received_at(headers) or datetime.now(timezone.utc)
-
-            # Extract sender from headers
-            sender_email = headers.get("from")
+        # Extract sender from headers
+        sender_email = headers.get("from")
 
         # Extract domain from sender email
         sender_domain = None

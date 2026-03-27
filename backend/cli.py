@@ -138,9 +138,7 @@ def save_last_session_id(session: dict, session_id: str) -> None:
 def _make_callback_handler(code_event: Event, captured: dict):
     """Build an HTTPServer handler that captures OAuth callback params.
 
-    Handles two flows:
-    - Standard OAuth2: ?code=...
-    - Composio-managed: ?connected_account_id=...&status=success
+    Handles the standard OAuth2 flow: ?code=...
     """
 
     class Handler(BaseHTTPRequestHandler):
@@ -152,10 +150,6 @@ def _make_callback_handler(code_event: Event, captured: dict):
             if parsed.path == OAUTH_CALLBACK_PATH:
                 params = parse_qs(parsed.query)
                 captured["code"] = params.get("code", [None])[0]
-                captured["connected_account_id"] = params.get(
-                    "connectedAccountId", [None]
-                )[0]
-                captured["status"] = params.get("status", [None])[0]
                 captured["error"] = params.get("error", [None])[0]
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
@@ -216,27 +210,12 @@ async def cmd_connect(supabase: SupabaseService, gmail: GmailService) -> dict | 
     with console.status("[yellow]Waiting for OAuth callback on port 3005…[/yellow]"):
         callback = wait_for_oauth_callback()
 
-    if not callback.get("code") and not callback.get("connected_account_id"):
+    if not callback.get("code"):
         console.print("[red]OAuth timed out or was cancelled.[/red]")
         return None
 
     with console.status("[yellow]Storing tokens…[/yellow]"):
-        if callback.get("connected_account_id"):
-            # Composio-managed flow: store the connected_account_id as access token
-            from datetime import timedelta
-            from pydantic import SecretStr
-            from backend.app.schemas.oauth import GmailTokens
-            import datetime as dt
-
-            tokens = GmailTokens(
-                access_token=SecretStr(callback["connected_account_id"]),
-                refresh_token=SecretStr("composio_managed"),
-                expires_at=dt.datetime.now(dt.timezone.utc) + timedelta(days=365),
-                scope="gmail.modify",
-                token_type="Bearer",
-            )
-        else:
-            tokens = await gmail.exchange_code_for_tokens(callback["code"])
+        tokens = await gmail.exchange_code_for_tokens(callback["code"])
         await supabase.store_gmail_tokens(UUID(user_id), tokens)
 
     save_session(user_id, email)

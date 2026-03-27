@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class LabelService:
-    """Apply Gmail labels via Composio with intelligent pattern learning.
+    """Apply Gmail labels with intelligent pattern learning.
 
     Supports both manual labeling and re-marking with accelerated learning (2x weight).
     """
