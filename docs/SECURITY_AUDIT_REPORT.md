@@ -82,6 +82,7 @@ Debug routes (`/api/debug/emails/{user_id}`, `/api/debug/agent-runs/{user_id}`) 
 **Severity:** Critical
 **OWASP:** A03:2021 – Injection (XSS)
 **File:** `backend/app/routes/review.py:61-66`
+**Status:** FIXED — `html.escape()` applied to all user data in review template
 
 The review page is built via f-string interpolation. `subject_escaped` only escapes `"` (for the `title` attribute), but the `<td>` cell content uses the **raw, unescaped** `email.subject` directly:
 
@@ -93,13 +94,13 @@ subject_escaped = (email.subject or "(no subject)").replace('"', "&quot;")
 
 An email subject containing `<script>alert(1)</script>` executes in the victim's browser. Since subjects come from arbitrary external senders, this is trivially exploitable.
 
-**Recommendation:**
+**Remediation Applied:**
 ```python
 import html
 subject_safe = html.escape(email.subject or "(no subject)")
 sender_safe = html.escape(email.sender_email or "–")
 ```
-Apply `html.escape()` to every value placed in HTML — `title` attributes, cell text, and `data-*` attributes.
+Applied `html.escape()` to every value placed in HTML — `title` attributes, cell text, and `data-*` attributes.
 
 ---
 
@@ -422,7 +423,7 @@ No length limit or character pattern on this externally supplied string.
 
 | Priority | ID | Finding | Effort |
 |---|---|---|---|
-| P0 | CRIT-04 | Fix XSS — `html.escape()` on all values placed in HTML | Low |
+| P0 | CRIT-04 | Fix XSS — `html.escape()` on all values placed in HTML | **FIXED** |
 | P0 | CRIT-03 | Remove or gate `/api/debug/*` routes to dev-only | Low |
 | P0 | CRIT-01 | Add JWT/session authentication middleware | High |
 | P0 | CRIT-02 | Add ownership authorization checks on all endpoints | Medium |
