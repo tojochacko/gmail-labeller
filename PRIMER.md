@@ -6,51 +6,58 @@ Session handoff document. Updated at the end of each session.
 
 ## What Was Done This Session
 
-### 1. End-to-End OAuth Flow Fixed
-Resolved a series of issues blocking the Gmail OAuth flow in local Docker development:
-- `docker-compose.yml`: fixed `DATABASE_URL` to `sqlite+aiosqlite://` (required by async SQLAlchemy); added port mapping `8001:8000`
-- `backend/app/db/engine.py`: removed `check_same_thread=False` (invalid for aiosqlite)
-- `backend/app/routes/oauth.py`: changed `/callback` from POST to GET; encodes `user_id` into the `state` param so Google's redirect carries the identity back
-- `backend/app/services/gmail_toolkit.py`: disabled PKCE (`autogenerate_code_verifier=False`); removed `include_granted_scopes` which caused Google 400 errors
-- `backend/app/services/db_service.py`: `upsert_user` now looks up by email first and returns the authoritative UUID (fixes UNIQUE constraint crash on reconnect); added `delete_gmail_tokens` for disconnect support
+### 1. Security Audit (re-run)
+Re-ran a full security audit after substantial codebase changes. New report in `docs/SECURITY_AUDIT_REPORT.md` covers 25 findings (12 prior + 13 new), rated CRIT/HIGH/MED/LOW.
 
-### 2. CLI Migrated from SupabaseService to DBService
-`backend/cli.py` was referencing the deleted `SupabaseService`. Full migration:
-- Replaced all `SupabaseService` references with `DBService` via `make_engine` + `make_session_factory`
-- Removed embedded OAuth callback HTTP server (was conflicting with Docker port mapping)
-- CLI now prints the auth URL, user completes OAuth in browser (FastAPI handles callback), then presses Enter — CLI checks DB for tokens
-- Fixed state/user_id ordering bug: `state` was built before `upsert_user` returned the authoritative UUID, so tokens were stored under the wrong user
-- Added "Disconnect Gmail" option (menu option 3) — deletes tokens and clears local session file
-- Updated all review URLs from `localhost:8000` to `localhost:8001`
+### 2. JWT Authentication — CRIT-01, CRIT-02, CRIT-03 (complete)
+Full JWT auth implementation across all FastAPI endpoints. Key changes:
 
-### 3. Job Alert Detection Bugs Fixed
-Two bugs found via live log analysis that caused a LinkedIn job alert email to not be tagged:
-- **`job_alert_detector.py`**: domain regex `r"@([\w.\-]+)$"` failed on display-name format `"LinkedIn <jobs-listings@linkedin.com>"` because of the trailing `>`. Fixed by stripping `<...>` wrapping before the regex
-- **`agent_service.py`**: OpenAI system prompt only listed 3 response fields, causing the LLM to omit `is_job_alert`. Fixed by adding `is_job_alert` to the system prompt with explicit instructions; also raised `max_tokens` from 150 → 200 to prevent truncation
+- **`backend/app/auth.py`** (new): `create_access_token`, `decode_access_token`, `require_auth` FastAPI dependency (reads `Authorization: Bearer` header or `?token=` query param)
+- **`backend/app/config.py`**: added `JWT_SECRET_KEY: SecretStr` and `ENVIRONMENT: str` (default `"production"`)
+- **`backend/app/dependencies.py`**: added `get_current_user` dependency (wraps `require_auth`; overridable in tests via `dependency_overrides`)
+- **`backend/app/routes/oauth.py`**: `/callback` now issues a JWT and returns it in the response; `/status/{user_id}` now requires auth and ownership check
+- **`backend/app/routes/emails.py`**: `user_id` from JWT, not query param
+- **`backend/app/routes/labels.py`**: `user_id` overridden from JWT
+- **`backend/app/routes/sessions.py`**: all 5 endpoints protected; `_get_owned_session` helper enforces 404/403 ownership checks
+- **`backend/app/routes/patterns.py`**: all 6 endpoints protected
+- **`backend/app/routes/review.py`**: auth on page + correct endpoints; JS reads `?token=` from URL and attaches as `Authorization: Bearer` on all fetch calls
+- **`backend/app/routes/debug.py`**: `_require_dev` dependency — returns 403 unless `ENVIRONMENT=development`
+- **`backend/cli.py`**: generates JWT locally after OAuth; persists it in `~/.gmail-labeler/session.json` (chmod 0o600); appends `?token=` to review URLs (token hidden from terminal display); retry loop if user presses Enter before OAuth completes
+
+### 3. New Tests Added
+- `backend/tests/test_auth.py`: JWT roundtrip, tampered/expired/malformed token 401 tests
+- `backend/tests/test_routes.py`: 401/403 tests for every protected route; happy-path tests; `_require_dev` unit tests for both dev and production modes
 
 ---
 
 ## Current State
 
 - **Branch:** `main`
-- **Tests:** 96/96 passing in Docker container (note: new fixes in `job_alert_detector.py` and `agent_service.py` are not yet covered by tests)
+- **Tests:** 118/118 passing in Docker container
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
-- **OAuth:** End-to-end flow working — tested via both FastAPI endpoints and CLI
+- **OAuth:** End-to-end flow working with JWT; CLI stores token and appends to review URL
+- **Auth:** All routes protected — unauthenticated requests return 401; cross-user access returns 403
+- **Security fixes:** CRIT-01, CRIT-02, CRIT-03, HIGH-02 resolved. See `docs/SECURITY_AUDIT_REPORT.md` for remaining open findings.
 - **Registered redirect URI:** `http://localhost:8001/api/oauth/callback` in Google Cloud Console
 
 ---
 
 ## Recommended Next Steps
 
-### Priority 1 — Add tests for the two job alert fixes
+### Priority 1 — Remaining CRIT/HIGH findings (from `docs/SECURITY_AUDIT_REPORT.md`)
+- **CRIT-04**: Stored XSS in review UI — labels/subjects rendered unescaped in HTML
+- **CRIT-05**: Review page CSRF — state-changing fetch calls need CSRF tokens
+- **HIGH-01**: OAuth state not verified server-side (replay attack possible)
+- **HIGH-03**: Prompt injection via learned patterns
+- **HIGH-04**: Unredacted snippets logged and sent to LLM
+- **HIGH-05**: Unfiltered patterns sent to LLM prompt (unbounded growth)
+
+### Priority 2 — Add tests for the two job alert fixes (from prior session)
 - `test_job_alert_detector.py`: add cases for display-name format emails e.g. `"LinkedIn <jobs-listings@linkedin.com>"`
 - `test_agent_service.py` or mock test: verify `is_job_alert` appears in OpenAI system prompt
 
-### Priority 2 — CLI: handle the case where user presses Enter before completing OAuth
-Currently shows "No tokens found" with no retry option. Could loop and re-prompt.
-
-### Priority 3 — Security audit items
-See `docs/SECURITY_AUDIT_REPORT.md` for the full list.
+### Priority 3 — Config: add `JWT_SECRET_KEY` to `config/env.example`
+The new required env var `JWT_SECRET_KEY` should be documented in `config/env.example` with a generation note.
 
 ---
 
@@ -80,3 +87,4 @@ docker compose down
 Saved in `docs/superpowers/plans/`:
 - `2026-03-27-gmail-api-direct.md` — completed ✅
 - `2026-03-27-job-alert-labeling.md` — completed ✅
+- `2026-03-29-crit-01-jwt-auth.md` — completed ✅
