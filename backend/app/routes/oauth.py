@@ -8,6 +8,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..auth import create_access_token
+from ..config import Settings, get_settings
 from ..dependencies import get_db_service, get_gmail_service
 from ..schemas.oauth import (
     OAuthCallbackRequest,
@@ -51,6 +53,7 @@ async def oauth_callback(
     state: str,
     gmail_service: GmailService = Depends(get_gmail_service),
     supabase: DBService = Depends(get_db_service),
+    settings: Settings = Depends(get_settings),
 ) -> OAuthCallbackResponse:
     """Process Gmail OAuth callback from Google redirect."""
     try:
@@ -60,7 +63,14 @@ async def oauth_callback(
     tokens = await gmail_service.exchange_code_for_tokens(code)
     await supabase.store_gmail_tokens(user_id, tokens)
     logger.info("Stored Gmail OAuth tokens for user {}", user_id)
-    return OAuthCallbackResponse(connected=True, expires_at=tokens.expires_at)
+    access_token = create_access_token(
+        user_id, settings.jwt_secret_key.get_secret_value()
+    )
+    return OAuthCallbackResponse(
+        connected=True,
+        expires_at=tokens.expires_at,
+        access_token=access_token,
+    )
 
 
 @router.get(

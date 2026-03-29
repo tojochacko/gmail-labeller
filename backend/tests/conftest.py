@@ -18,10 +18,12 @@ if str(ROOT) not in sys.path:
 
 from cryptography.fernet import Fernet  # noqa: E402
 
+from backend.app.auth import create_access_token  # noqa: E402
 from backend.app.config import Settings  # noqa: E402
 from backend.app.main import create_app  # noqa: E402
 from backend.app.dependencies import (  # noqa: E402
     get_agent_service,
+    get_current_user,
     get_db_service,
     get_email_service,
     get_gmail_service,
@@ -202,6 +204,7 @@ def client(
         {
             "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
             "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+            "JWT_SECRET_KEY": "test-jwt-secret-do-not-use-in-prod",
             "AGENT_RUNTIME_BASE_URL": "http://localhost:9000",
             "GOOGLE_OAUTH_CLIENT_ID": "client-id",
             "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
@@ -216,6 +219,60 @@ def client(
     app.dependency_overrides[get_email_service] = lambda: fake_email_service
     app.dependency_overrides[get_label_service] = lambda: fake_label_service
     app.dependency_overrides[get_agent_service] = lambda: fake_agent_service
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+
+
+TEST_JWT_SECRET = "test-jwt-secret-do-not-use-in-prod"
+
+
+@pytest.fixture
+def auth_user_id() -> UUID:
+    """A stable user UUID for use in auth-protected tests."""
+    return UUID("00000000-0000-0000-0000-000000000001")
+
+
+@pytest.fixture
+def auth_headers(auth_user_id: UUID) -> dict[str, str]:
+    """Bearer token headers for auth-protected endpoint tests."""
+    token = create_access_token(auth_user_id, TEST_JWT_SECRET)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def authed_client(
+    fake_supabase: FakeDBService,
+    fake_gmail_service: FakeGmailService,
+    fake_email_service: FakeEmailService,
+    fake_label_service: FakeLabelService,
+    fake_agent_service: FakeAgentService,
+    auth_user_id: UUID,
+) -> Iterator[TestClient]:
+    """TestClient with auth dependency pre-wired to a known user_id."""
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+            "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+            "JWT_SECRET_KEY": TEST_JWT_SECRET,
+            "AGENT_RUNTIME_BASE_URL": "http://localhost:9000",
+            "GOOGLE_OAUTH_CLIENT_ID": "client-id",
+            "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+            "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost:3005/oauth/callback",
+            "GOOGLE_OAUTH_SCOPE": "https://www.googleapis.com/auth/gmail.modify",
+        }
+    )
+    app = create_app(settings)
+
+    app.dependency_overrides[get_db_service] = lambda: fake_supabase
+    app.dependency_overrides[get_gmail_service] = lambda: fake_gmail_service
+    app.dependency_overrides[get_email_service] = lambda: fake_email_service
+    app.dependency_overrides[get_label_service] = lambda: fake_label_service
+    app.dependency_overrides[get_agent_service] = lambda: fake_agent_service
+    # Override auth to return a known user_id — no token needed in tests
+    app.dependency_overrides[get_current_user] = lambda: auth_user_id
 
     with TestClient(app) as test_client:
         yield test_client

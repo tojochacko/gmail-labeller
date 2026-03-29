@@ -24,12 +24,17 @@ def test_oauth_start_returns_authorization_url(client: TestClient) -> None:
     assert "state" in data and len(data["state"]) > 0
 
 
-def test_oauth_callback_stores_tokens(client: TestClient, fake_supabase) -> None:
+def test_oauth_callback_stores_tokens_and_returns_token(
+    client: TestClient, fake_supabase
+) -> None:
     user_id = uuid4()
-    payload = {"user_id": str(user_id), "code": "auth-code", "state": "state"}
-    response = client.post("/api/oauth/callback", json=payload)
+    state = f"{user_id}.somesecret"
+    response = client.get(f"/api/oauth/callback?code=auth-code&state={state}")
     assert response.status_code == 200
-    assert response.json()["connected"] is True
+    data = response.json()
+    assert data["connected"] is True
+    assert "access_token" in data
+    assert isinstance(data["access_token"], str) and len(data["access_token"]) > 20
     assert user_id in fake_supabase.tokens
 
 

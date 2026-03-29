@@ -34,6 +34,7 @@ class OAuthCallbackResponse(BaseModel):
 
     connected: bool
     expires_at: datetime
+    access_token: str
 
 
 class OAuthStatusResponse(BaseModel):
