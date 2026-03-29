@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..dependencies import get_agent_service
+from ..dependencies import get_agent_service, get_current_user
 from ..schemas import AgentRunRequest, AgentRunResponse, AgentRunStatusResponse
 from ..services.agent_service import AgentService
 
@@ -20,9 +20,11 @@ router = APIRouter()
 )
 async def trigger_agent_run(
     payload: AgentRunRequest,
+    current_user: UUID = Depends(get_current_user),
     agent_service: AgentService = Depends(get_agent_service),
 ) -> AgentRunResponse:
     """Start an agent run for a Gmail email."""
+    payload.user_id = current_user
     return await agent_service.trigger_agent_run(payload)
 
 
@@ -33,6 +35,7 @@ async def trigger_agent_run(
 )
 async def get_agent_run(
     run_id: UUID,
+    _: UUID = Depends(get_current_user),
     agent_service: AgentService = Depends(get_agent_service),
 ) -> AgentRunStatusResponse:
     """Retrieve the status for an agent run."""

@@ -137,17 +137,34 @@ def test_correct_label_requires_auth(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_agent_run_endpoints(client: TestClient, fake_agent_service) -> None:
+def test_trigger_agent_run_requires_auth(client: TestClient) -> None:
+    """POST /api/runs without a token must return 401."""
     payload = {
         "user_id": str(uuid4()),
         "email_id": str(uuid4()),
         "gmail_message_id": "msg-1",
     }
-    trigger_response = client.post("/api/runs", json=payload)
+    response = client.post("/api/runs", json=payload)
+    assert response.status_code == 401
+
+
+def test_get_agent_run_requires_auth(client: TestClient) -> None:
+    """GET /api/runs/{id} without a token must return 401."""
+    response = client.get(f"/api/runs/{uuid4()}")
+    assert response.status_code == 401
+
+
+def test_agent_run_endpoints(authed_client: TestClient, fake_agent_service) -> None:
+    payload = {
+        "user_id": str(uuid4()),
+        "email_id": str(uuid4()),
+        "gmail_message_id": "msg-1",
+    }
+    trigger_response = authed_client.post("/api/runs", json=payload)
     assert trigger_response.status_code == 202
     run_id = trigger_response.json()["run_id"]
 
-    status_response = client.get(f"/api/runs/{run_id}")
+    status_response = authed_client.get(f"/api/runs/{run_id}")
     assert status_response.status_code == 200
     status_data = status_response.json()
     assert status_data["status"] == "completed"
