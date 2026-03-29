@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac as _hmac
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -37,6 +39,17 @@ def decode_access_token(token: str, secret: str) -> UUID:
             detail="Invalid or expired token.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+
+def make_csrf_token(session_id: str, user_id: str, secret: str) -> str:
+    """Return an HMAC-SHA256 token bound to a specific session and user.
+
+    Stateless — verifiable without DB storage. Uses the JWT secret so only
+    the server can produce valid tokens. Inputs are expected to be UUIDs
+    (which never contain ':'), keeping the ':' separator unambiguous.
+    """
+    msg = f"{session_id}:{user_id}".encode()
+    return _hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
 
 
 def require_auth(

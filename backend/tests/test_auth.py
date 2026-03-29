@@ -9,7 +9,11 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from backend.app.auth import create_access_token, decode_access_token
+from backend.app.auth import (
+    create_access_token,
+    decode_access_token,
+    make_csrf_token,
+)
 from backend.app.config import Settings
 
 
@@ -60,3 +64,38 @@ def test_decode_rejects_malformed_token() -> None:
     with pytest.raises(HTTPException) as exc_info:
         decode_access_token("not.a.token", "secret")
     assert exc_info.value.status_code == 401
+
+
+def test_make_csrf_token_returns_64_char_hex() -> None:
+    """make_csrf_token returns a 64-character lowercase hex string (SHA-256)."""
+    token = make_csrf_token("session-abc", "user-xyz", "secret")
+    assert len(token) == 64
+    assert all(c in "0123456789abcdef" for c in token)
+
+
+def test_make_csrf_token_is_deterministic() -> None:
+    """Same inputs always produce the same token."""
+    t1 = make_csrf_token("session-abc", "user-xyz", "secret")
+    t2 = make_csrf_token("session-abc", "user-xyz", "secret")
+    assert t1 == t2
+
+
+def test_make_csrf_token_differs_for_different_sessions() -> None:
+    """Different session_id produces a different token."""
+    t1 = make_csrf_token("session-1", "user-xyz", "secret")
+    t2 = make_csrf_token("session-2", "user-xyz", "secret")
+    assert t1 != t2
+
+
+def test_make_csrf_token_differs_for_different_users() -> None:
+    """Different user_id produces a different token."""
+    t1 = make_csrf_token("session-abc", "user-1", "secret")
+    t2 = make_csrf_token("session-abc", "user-2", "secret")
+    assert t1 != t2
+
+
+def test_make_csrf_token_differs_for_different_secrets() -> None:
+    """Different secret produces a different token — key security invariant."""
+    t1 = make_csrf_token("session-abc", "user-xyz", "secret-1")
+    t2 = make_csrf_token("session-abc", "user-xyz", "secret-2")
+    assert t1 != t2
