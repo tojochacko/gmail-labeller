@@ -68,7 +68,10 @@ class JobAlertDetector:
         return False
 
     def _matches_sender_domain(self, sender_email: str) -> bool:
-        match = re.search(r"@([\w.\-]+)$", sender_email.lower())
+        # Strip display-name format: "Name <email@domain.com>" → "email@domain.com"
+        angle_match = re.search(r"<([^>]+)>", sender_email)
+        addr = angle_match.group(1) if angle_match else sender_email
+        match = re.search(r"@([\w.\-]+)$", addr.lower())
         if not match:
             return False
         domain = match.group(1)

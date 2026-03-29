@@ -6,68 +6,51 @@ Session handoff document. Updated at the end of each session.
 
 ## What Was Done This Session
 
-### 1. SQLite + SQLAlchemy Migration (committed before session start)
-Replaced Supabase with a self-hosted SQLite database:
-- New `backend/app/db/` — SQLAlchemy ORM models (User, GmailToken, Email, AgentRun, LabelPattern, ClassificationSession)
-- New `backend/app/services/db_service.py` — `DBService` replacing `SupabaseService`, with Fernet-encrypted token storage
-- Alembic migration infrastructure (`alembic.ini`, `backend/alembic/`)
-- All services and dependency injection updated to use `DBService`
-- 27 async tests added for `DBService`
+### 1. End-to-End OAuth Flow Fixed
+Resolved a series of issues blocking the Gmail OAuth flow in local Docker development:
+- `docker-compose.yml`: fixed `DATABASE_URL` to `sqlite+aiosqlite://` (required by async SQLAlchemy); added port mapping `8001:8000`
+- `backend/app/db/engine.py`: removed `check_same_thread=False` (invalid for aiosqlite)
+- `backend/app/routes/oauth.py`: changed `/callback` from POST to GET; encodes `user_id` into the `state` param so Google's redirect carries the identity back
+- `backend/app/services/gmail_toolkit.py`: disabled PKCE (`autogenerate_code_verifier=False`); removed `include_granted_scopes` which caused Google 400 errors
+- `backend/app/services/db_service.py`: `upsert_user` now looks up by email first and returns the authoritative UUID (fixes UNIQUE constraint crash on reconnect); added `delete_gmail_tokens` for disconnect support
 
-### 2. Docker Setup
-Created containerised dev/test environment:
-- `Dockerfile` — Python 3.12-slim + uv, installs all deps including spaCy `en_core_web_lg`
-- `docker-compose.yml` — single `backend` service, mounts source, preserves venv in named volume
-- `.dockerignore` — excludes `.venv`, `__pycache__`, `data/*.db`, etc.
-- Tests run with: `docker compose exec backend uv run pytest backend/tests/ -v`
-- Container: `autogen-test-backend-1`
+### 2. CLI Migrated from SupabaseService to DBService
+`backend/cli.py` was referencing the deleted `SupabaseService`. Full migration:
+- Replaced all `SupabaseService` references with `DBService` via `make_engine` + `make_session_factory`
+- Removed embedded OAuth callback HTTP server (was conflicting with Docker port mapping)
+- CLI now prints the auth URL, user completes OAuth in browser (FastAPI handles callback), then presses Enter — CLI checks DB for tokens
+- Fixed state/user_id ordering bug: `state` was built before `upsert_user` returned the authoritative UUID, so tokens were stored under the wrong user
+- Added "Disconnect Gmail" option (menu option 3) — deletes tokens and clears local session file
+- Updated all review URLs from `localhost:8000` to `localhost:8001`
 
-### 3. Gmail API Direct Integration (replaced Composio)
-Removed Composio middleware and replaced with direct Google Gmail API:
-- `backend/app/services/gmail_toolkit.py` — `ComposioGmailAdapter` replaced by `GmailApiAdapter` using `google-api-python-client`; `GmailService` interface preserved identically
-- `backend/app/routes/oauth.py` — simplified to standard OAuth2 only (no Composio-managed branch)
-- `backend/app/schemas/oauth.py` — `OAuthCallbackRequest.code` is now required
-- `backend/app/config.py` — removed `composio_api_key`, `composio_account_id`
-- `pyproject.toml` — removed `composio`, `composio-openai`; added `google-auth-oauthlib`, `google-api-python-client`, `google-auth-httplib2`
-- Dead Composio code cleaned from `email_service.py`, `cli.py`, `label_service.py`, `schemas/email.py`, `scripts/`
-
-### 4. Job Alert Labeling (`ai-job-alert`)
-Added automatic `ai-job-alert` Gmail label applied on top of Important/Not Important:
-- New `backend/app/services/job_alert_detector.py` — stateless rule-based `JobAlertDetector`
-  - Domain allowlist: linkedin.com, indeed.com, glassdoor.com, naukri.com, monster.com, ziprecruiter.com, dice.com, wellfound.com, levels.fyi, simplyhired.com, careerbuilder.com
-  - Subject/snippet keyword list: "job alert", "new jobs", "jobs matching", "job opportunity", "career opportunity", "new opening", "we are hiring", "we're hiring", "jobs for you", "job matches", "job posting", "job recommendation"
-- `BatchClassifier` updated: after main label applied, runs detector; if matched, calls `apply_label("ai-job-alert")`
-- 16 unit tests for `JobAlertDetector`, 2 integration tests for `BatchClassifier`
-
-### 5. Double-layer Job Alert Detection
-Added LLM as a second detection layer alongside the existing rule-based detector:
-- `_build_classification_prompt()` now requests `is_job_alert: true|false` in the JSON response, asking specifically about "job posting, recruiter outreach, or automated job board alert"
-- `run_batch()` extracts `llm_is_job_alert` from the LLM result payload
-- `ai-job-alert` tag applied if **either** the rule-based detector OR the LLM returns `is_job_alert: true`
-- When `LocalEmailFilter` skips LLM, only rule-based detection applies (acceptable — those emails are never job alerts)
-- 1 new test: LLM-only detection (recruiter outreach not matching domain/keyword rules)
+### 3. Job Alert Detection Bugs Fixed
+Two bugs found via live log analysis that caused a LinkedIn job alert email to not be tagged:
+- **`job_alert_detector.py`**: domain regex `r"@([\w.\-]+)$"` failed on display-name format `"LinkedIn <jobs-listings@linkedin.com>"` because of the trailing `>`. Fixed by stripping `<...>` wrapping before the regex
+- **`agent_service.py`**: OpenAI system prompt only listed 3 response fields, causing the LLM to omit `is_job_alert`. Fixed by adding `is_job_alert` to the system prompt with explicit instructions; also raised `max_tokens` from 150 → 200 to prevent truncation
 
 ---
 
 ## Current State
 
 - **Branch:** `main`
-- **Tests:** 96/96 passing in Docker container
+- **Tests:** 96/96 passing in Docker container (note: new fixes in `job_alert_detector.py` and `agent_service.py` are not yet covered by tests)
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
+- **OAuth:** End-to-end flow working — tested via both FastAPI endpoints and CLI
+- **Registered redirect URI:** `http://localhost:8001/api/oauth/callback` in Google Cloud Console
 
 ---
 
 ## Recommended Next Steps
 
-### Priority 1 — End-to-end testing
-The OAuth flow uses real Google credentials. Before production:
-1. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` in `config/.env`
-2. Verify redirect URI is registered in Google Cloud Console
-3. Run the OAuth flow manually: `POST /oauth/start` → browser → `POST /oauth/callback`
-4. Run a batch classification to confirm Gmail label application works
+### Priority 1 — Add tests for the two job alert fixes
+- `test_job_alert_detector.py`: add cases for display-name format emails e.g. `"LinkedIn <jobs-listings@linkedin.com>"`
+- `test_agent_service.py` or mock test: verify `is_job_alert` appears in OpenAI system prompt
+
+### Priority 2 — CLI: handle the case where user presses Enter before completing OAuth
+Currently shows "No tokens found" with no retry option. Could loop and re-prompt.
 
 ### Priority 3 — Security audit items
-See `docs/SECURITY_AUDIT_REPORT.md` for the full list flagged before this session.
+See `docs/SECURITY_AUDIT_REPORT.md` for the full list.
 
 ---
 
@@ -76,6 +59,12 @@ See `docs/SECURITY_AUDIT_REPORT.md` for the full list flagged before this sessio
 ```bash
 # Start container
 docker compose up -d
+
+# Start FastAPI server (required for OAuth callback and API access)
+docker compose exec backend uv run uvicorn backend.app.main:create_app --factory --host 0.0.0.0 --port 8000
+
+# Run CLI (stop uvicorn first if OAuth is needed, or run alongside for batch classification)
+docker compose exec backend uv run python -m backend.cli
 
 # Run tests
 docker compose exec backend uv run pytest backend/tests/ -v

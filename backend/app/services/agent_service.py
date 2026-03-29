@@ -216,13 +216,16 @@ class AgentService:
                         "content": (
                             "You are an email classifier. Respond only with valid JSON: "
                             '{"suggestion": "Important|Not Important", '
-                            '"confidence": <float 0-1>, "reasoning": "<brief reason>"}'
+                            '"confidence": <float 0-1>, "reasoning": "<brief reason>", '
+                            '"is_job_alert": <true|false>}. '
+                            "Set is_job_alert to true for job postings, recruiter outreach, "
+                            "or automated job board alerts."
                         ),
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
-                max_tokens=150,
+                max_tokens=200,
             )
             result_text = response.choices[0].message.content or ""
             result = json.loads(result_text)
