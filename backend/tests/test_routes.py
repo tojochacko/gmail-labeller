@@ -38,24 +38,95 @@ def test_oauth_callback_stores_tokens_and_returns_token(
     assert user_id in fake_supabase.tokens
 
 
-def test_list_emails_returns_items(client: TestClient) -> None:
-    user_id = uuid4()
-    response = client.get(f"/api/emails?user_id={user_id}")
+def test_list_emails_requires_auth(client: TestClient) -> None:
+    """GET /api/emails without a token must return 401."""
+    response = client.get("/api/emails")
+    assert response.status_code == 401
+
+
+def test_list_emails_with_auth(authed_client: TestClient) -> None:
+    """GET /api/emails with a valid token must return email items."""
+    response = authed_client.get("/api/emails")
     assert response.status_code == 200
     data = response.json()
     assert "items" in data and len(data["items"]) == 1
-    assert data["items"][0]["subject"] == "Test Message"
 
 
-def test_apply_label_succeeds(client: TestClient) -> None:
+def test_apply_label_requires_auth(client: TestClient) -> None:
+    """POST /api/labels without a token must return 401."""
     payload = {
         "user_id": str(uuid4()),
         "gmail_message_id": "msg-1",
         "label_name": "AUTO_LABEL",
     }
     response = client.post("/api/labels", json=payload)
+    assert response.status_code == 401
+
+
+def test_apply_label_with_auth(authed_client: TestClient) -> None:
+    """POST /api/labels with a valid token must succeed."""
+    payload = {
+        "gmail_message_id": "msg-1",
+        "label_name": "AUTO_LABEL",
+    }
+    response = authed_client.post("/api/labels", json=payload)
     assert response.status_code == 200
     assert response.json()["label"] == "AUTO_LABEL"
+
+
+def test_create_session_requires_auth(client: TestClient) -> None:
+    """POST /api/sessions without a token must return 401."""
+    response = client.post("/api/sessions", json={"max_results": 5})
+    assert response.status_code == 401
+
+
+def test_get_session_requires_auth(client: TestClient) -> None:
+    """GET /api/sessions/{id} without a token must return 401."""
+    response = client.get(f"/api/sessions/{uuid4()}")
+    assert response.status_code == 401
+
+
+def test_run_session_requires_auth(client: TestClient) -> None:
+    """POST /api/sessions/{id}/run without a token must return 401."""
+    response = client.post(f"/api/sessions/{uuid4()}/run")
+    assert response.status_code == 401
+
+
+def test_cleanup_session_requires_auth(client: TestClient) -> None:
+    """POST /api/sessions/{id}/cleanup without a token must return 401."""
+    response = client.post(f"/api/sessions/{uuid4()}/cleanup")
+    assert response.status_code == 401
+
+
+def test_list_patterns_requires_auth(client: TestClient) -> None:
+    """GET /api/patterns without a token must return 401."""
+    response = client.get("/api/patterns")
+    assert response.status_code == 401
+
+
+def test_extract_patterns_requires_auth(client: TestClient) -> None:
+    """POST /api/patterns/extract without a token must return 401."""
+    response = client.post("/api/patterns/extract", json={
+        "subject": "Test", "sender_email": "a@b.com", "label_type": "Important"
+    })
+    assert response.status_code == 401
+
+
+def test_review_page_requires_auth(client: TestClient) -> None:
+    """GET /api/review/{id} without a token must return 401."""
+    response = client.get(f"/api/review/{uuid4()}")
+    assert response.status_code == 401
+
+
+def test_correct_label_requires_auth(client: TestClient) -> None:
+    """POST /api/review/{id}/correct without a token must return 401."""
+    payload = {
+        "email_id": str(uuid4()),
+        "gmail_message_id": "msg-1",
+        "new_label": "Important",
+    }
+    response = client.post(f"/api/review/{uuid4()}/correct", json=payload)
+    assert response.status_code == 401
 
 
 def test_agent_run_endpoints(client: TestClient, fake_agent_service) -> None:

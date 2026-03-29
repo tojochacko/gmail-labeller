@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 
-from ..dependencies import get_email_service
+from ..dependencies import get_current_user, get_email_service
 from ..schemas.email import EmailListResponse
 from ..services.email_service import EmailService
 
@@ -16,12 +16,12 @@ router = APIRouter()
 
 @router.get("", status_code=status.HTTP_200_OK)
 async def list_emails(
-    user_id: UUID = Query(..., description="Internal user identifier"),
     max_results: int = Query(20, ge=1, le=50),
     query: str | None = Query(
         None,
         description="Gmail search query (e.g., 'in:inbox', 'is:unread'). Defaults to 'in:inbox'",
     ),
+    user_id: UUID = Depends(get_current_user),
     email_service: EmailService = Depends(get_email_service),
 ) -> JSONResponse:
     """Fetch latest Gmail messages for the authenticated user."""
