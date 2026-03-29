@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from ..dependencies import (
     get_batch_classifier,
     get_classification_session_service,
+    get_current_user,
 )
 from ..services.batch_classifier import BatchClassifier
 from ..services.classification_session_service import ClassificationSessionService
@@ -22,7 +23,6 @@ router = APIRouter()
 class CreateSessionRequest(BaseModel):
     """Request payload for creating a classification session."""
 
-    user_id: UUID
     max_results: int = Field(default=10, ge=1, le=50)
 
 
@@ -53,15 +53,30 @@ class CleanupResponse(BaseModel):
     status: str
 
 
+async def _get_owned_session(
+    session_id: UUID,
+    current_user: UUID,
+    session_svc: ClassificationSessionService,
+) -> dict:
+    """Fetch a session and verify the caller owns it. Raises 404 or 403."""
+    session = await session_svc.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session["user_id"] != str(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    return session
+
+
 @router.post("", response_model=CreateSessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(
     request: CreateSessionRequest,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
 ) -> CreateSessionResponse:
     """Create a new classification session and fetch unlabeled emails into it."""
     try:
         session_id = await session_svc.create_session(
-            user_id=request.user_id,
+            user_id=current_user,
             max_results=request.max_results,
         )
         session = await session_svc.get_session(session_id)
@@ -73,18 +88,17 @@ async def create_session(
         )
     except Exception as e:
         logger.error("Failed to create session: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred.")
 
 
 @router.get("/{session_id}", response_model=SessionStatusResponse)
 async def get_session(
     session_id: UUID,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
 ) -> SessionStatusResponse:
     """Get the status of a classification session."""
-    session = await session_svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = await _get_owned_session(session_id, current_user, session_svc)
     return SessionStatusResponse(
         session_id=UUID(session["id"]),
         status=session["status"],
@@ -98,13 +112,12 @@ async def get_session(
 async def run_session(
     session_id: UUID,
     background_tasks: BackgroundTasks,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
     batch_classifier: BatchClassifier = Depends(get_batch_classifier),
 ) -> dict:
     """Trigger batch LLM classification for all emails in a session (runs in background)."""
-    session = await session_svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = await _get_owned_session(session_id, current_user, session_svc)
     if session["status"] not in ("pending", "awaiting_review"):
         raise HTTPException(
             status_code=409,
@@ -117,7 +130,9 @@ async def run_session(
         try:
             await batch_classifier.run_batch(session_id=session_id, user_id=user_id)
         except Exception as e:
-            logger.error("Background batch classification failed for session %s: %s", session_id, e)
+            logger.error(
+                "Background batch classification failed for session %s: %s", session_id, e
+            )
 
     background_tasks.add_task(_run_bg)
     return {"session_id": str(session_id), "status": "classifying", "message": "Batch started"}
@@ -126,13 +141,11 @@ async def run_session(
 @router.get("/{session_id}/emails")
 async def get_session_emails(
     session_id: UUID,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
 ) -> dict:
     """Get all emails in a session for review."""
-    session = await session_svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
+    await _get_owned_session(session_id, current_user, session_svc)
     emails = await session_svc.get_session_emails(session_id)
     return {
         "session_id": str(session_id),
@@ -143,13 +156,11 @@ async def get_session_emails(
 @router.post("/{session_id}/cleanup", response_model=CleanupResponse)
 async def cleanup_session(
     session_id: UUID,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
 ) -> CleanupResponse:
     """Delete emails and agent_runs for a session, mark it cleaned_up."""
-    session = await session_svc.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
+    await _get_owned_session(session_id, current_user, session_svc)
     result = await session_svc.cleanup_session(session_id)
     return CleanupResponse(
         session_id=session_id,
