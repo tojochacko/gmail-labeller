@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
+import jwt
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
+from backend.app.auth import create_access_token, decode_access_token
 from backend.app.config import Settings
 
 
@@ -16,17 +21,8 @@ def test_settings_requires_jwt_secret_key() -> None:
             GOOGLE_OAUTH_CLIENT_ID="client-id",
             GOOGLE_OAUTH_CLIENT_SECRET="client-secret",
             GOOGLE_OAUTH_REDIRECT_URI="http://localhost:8000/callback",
-            # JWT_SECRET_KEY intentionally omitted
             _env_file=None,
         )
-
-
-from datetime import timedelta
-from uuid import UUID, uuid4
-
-import jwt
-
-from backend.app.auth import create_access_token, decode_access_token
 
 
 def test_create_and_decode_roundtrip() -> None:
@@ -39,8 +35,6 @@ def test_create_and_decode_roundtrip() -> None:
 
 def test_decode_rejects_tampered_token() -> None:
     """A token signed with a different secret must raise HTTPException 401."""
-    from fastapi import HTTPException
-
     token = create_access_token(uuid4(), "secret-a")
     with pytest.raises(HTTPException) as exc_info:
         decode_access_token(token, "secret-b")
@@ -49,8 +43,6 @@ def test_decode_rejects_tampered_token() -> None:
 
 def test_decode_rejects_expired_token() -> None:
     """An expired token must raise HTTPException 401."""
-    from fastapi import HTTPException
-
     secret = "test-secret"
     user_id = uuid4()
     payload = {
@@ -65,8 +57,6 @@ def test_decode_rejects_expired_token() -> None:
 
 def test_decode_rejects_malformed_token() -> None:
     """A non-JWT string must raise HTTPException 401."""
-    from fastapi import HTTPException
-
     with pytest.raises(HTTPException) as exc_info:
         decode_access_token("not.a.token", "secret")
     assert exc_info.value.status_code == 401
