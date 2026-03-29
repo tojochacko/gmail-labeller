@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 
@@ -156,3 +158,50 @@ def test_debug_endpoints_disabled_in_non_dev(client: TestClient) -> None:
     """Debug endpoints must return 403 when environment is not 'development'."""
     response = client.get(f"/api/debug/emails/{uuid4()}")
     assert response.status_code == 403
+
+
+def test_require_dev_guard_raises_403_in_production() -> None:
+    """_require_dev dependency raises 403 when environment is 'production'."""
+    from cryptography.fernet import Fernet
+
+    from backend.app.config import Settings
+    from backend.app.routes.debug import _require_dev
+
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+            "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+            "JWT_SECRET_KEY": "test-secret",
+            "GOOGLE_OAUTH_CLIENT_ID": "client-id",
+            "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+            "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost/callback",
+            "GOOGLE_OAUTH_SCOPE": "https://www.googleapis.com/auth/gmail.modify",
+            "ENVIRONMENT": "production",
+        }
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _require_dev(settings=settings)
+    assert exc_info.value.status_code == 403
+
+
+def test_require_dev_guard_passes_in_development() -> None:
+    """_require_dev dependency does not raise when environment is 'development'."""
+    from cryptography.fernet import Fernet
+
+    from backend.app.config import Settings
+    from backend.app.routes.debug import _require_dev
+
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+            "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+            "JWT_SECRET_KEY": "test-secret",
+            "GOOGLE_OAUTH_CLIENT_ID": "client-id",
+            "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+            "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost/callback",
+            "GOOGLE_OAUTH_SCOPE": "https://www.googleapis.com/auth/gmail.modify",
+            "ENVIRONMENT": "development",
+        }
+    )
+    # Should not raise — guard passes when environment is development
+    _require_dev(settings=settings)

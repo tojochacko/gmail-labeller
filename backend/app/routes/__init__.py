@@ -10,6 +10,9 @@ api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth"])
 api_router.include_router(emails.router, prefix="/emails", tags=["emails"])
 api_router.include_router(labels.router, prefix="/labels", tags=["labels"])
 api_router.include_router(agent.router, prefix="/runs", tags=["agent-runs"])
+# Debug routes are always registered but gated at runtime via the _require_dev
+# dependency (returns 403 unless ENVIRONMENT=development). This keeps the route
+# table stable across environments; the guard is the enforced boundary.
 api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
 api_router.include_router(patterns.router, prefix="/patterns", tags=["patterns"])
 api_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
