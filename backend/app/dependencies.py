@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import Depends
 
+from .auth import require_auth
 from .config import Settings, get_settings
 from .db.engine import make_engine, make_session_factory
 from .services import (
@@ -93,9 +94,6 @@ def get_batch_classifier(
     gmail_service: GmailService = Depends(get_gmail_service),
 ) -> BatchClassifier:
     return BatchClassifier(session_repo, db, agent_service, gmail_service)
-
-
-from .auth import require_auth  # noqa: E402
 
 
 def get_current_user(user_id: UUID = Depends(require_auth)) -> UUID:

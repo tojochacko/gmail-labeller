@@ -192,6 +192,9 @@ def fake_agent_service() -> FakeAgentService:
     return FakeAgentService()
 
 
+TEST_JWT_SECRET = "test-jwt-secret-do-not-use-in-prod"
+
+
 @pytest.fixture
 def client(
     fake_supabase: FakeDBService,
@@ -204,7 +207,7 @@ def client(
         {
             "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
             "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
-            "JWT_SECRET_KEY": "test-jwt-secret-do-not-use-in-prod",
+            "JWT_SECRET_KEY": TEST_JWT_SECRET,
             "AGENT_RUNTIME_BASE_URL": "http://localhost:9000",
             "GOOGLE_OAUTH_CLIENT_ID": "client-id",
             "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
@@ -224,9 +227,6 @@ def client(
         yield test_client
 
     app.dependency_overrides.clear()
-
-
-TEST_JWT_SECRET = "test-jwt-secret-do-not-use-in-prod"
 
 
 @pytest.fixture
