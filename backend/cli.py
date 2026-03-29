@@ -96,9 +96,12 @@ async def _build_custom_label_map(
     return {
         lbl["id"]: lbl["name"]
         for lbl in labels
-        if isinstance(lbl, dict) and "id" in lbl and "name" in lbl
+        if isinstance(lbl, dict)
+        and "id" in lbl
+        and "name" in lbl
         and lbl["id"] not in _SYSTEM_LABEL_MAP
     }
+
 
 # ── Session ──────────────────────────────────────────────────────────────────
 
@@ -116,28 +119,27 @@ def save_session(
     access_token: str | None = None,
 ) -> None:
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if SESSION_FILE.exists():
+        existing = json.loads(SESSION_FILE.read_text())
     data: dict = {"user_id": user_id, "email": email}
     if last_session_id:
         data["last_session_id"] = last_session_id
-    elif SESSION_FILE.exists():
-        existing = json.loads(SESSION_FILE.read_text())
-        if "last_session_id" in existing:
-            data["last_session_id"] = existing["last_session_id"]
+    elif "last_session_id" in existing:
+        data["last_session_id"] = existing["last_session_id"]
     if access_token:
         data["access_token"] = access_token
-    elif SESSION_FILE.exists():
-        existing = json.loads(SESSION_FILE.read_text())
-        if "access_token" in existing:
-            data["access_token"] = existing["access_token"]
+    elif "access_token" in existing:
+        data["access_token"] = existing["access_token"]
     SESSION_FILE.write_text(json.dumps(data))
+    SESSION_FILE.chmod(0o600)
 
 
 def save_last_session_id(session: dict, session_id: str) -> None:
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = {**session, "last_session_id": session_id}
     SESSION_FILE.write_text(json.dumps(data))
-
-
+    SESSION_FILE.chmod(0o600)
 
 
 # ── Service factory ───────────────────────────────────────────────────────────
@@ -147,7 +149,8 @@ def build_services():
     settings = get_settings()
     engine = make_engine(settings.database_url)
     session_factory = make_session_factory(engine)
-    db = DBService(session_factory=session_factory, fernet_key=settings.fernet_secret_key.get_secret_value())
+    fernet_key = settings.fernet_secret_key.get_secret_value()
+    db = DBService(session_factory=session_factory, fernet_key=fernet_key)
     toolkit = GmailToolkitFactory(settings).build()
     gmail = GmailService(toolkit, settings)
     email_svc = EmailService(gmail, db, settings)
@@ -186,9 +189,7 @@ async def cmd_connect(db: DBService, gmail: GmailService, settings: Settings) ->
             console.print("[red]Cancelled.[/red]")
             return None
 
-    access_token = create_access_token(
-        UUID(user_id), settings.jwt_secret_key.get_secret_value()
-    )
+    access_token = create_access_token(UUID(user_id), settings.jwt_secret_key.get_secret_value())
     save_session(user_id, email, access_token=access_token)
     console.print(f"[green]✓ Connected as {email}[/green]  (user_id: {user_id})")
     return {"user_id": user_id, "email": email, "access_token": access_token}
@@ -223,9 +224,7 @@ async def cmd_fetch_emails(
 
     with console.status("[yellow]Fetching emails and labels…[/yellow]"):
         emails, custom_label_map = await asyncio.gather(
-            email_svc.fetch_latest_emails(
-                user_id=user_id, max_results=max_results, query=query
-            ),
+            email_svc.fetch_latest_emails(user_id=user_id, max_results=max_results, query=query),
             _build_custom_label_map(gmail, db, user_id),
         )
 
@@ -249,9 +248,7 @@ async def cmd_fetch_emails(
     return emails
 
 
-async def cmd_label_email(
-    label_svc: LabelService, emails: list, session: dict
-) -> None:
+async def cmd_label_email(label_svc: LabelService, emails: list, session: dict) -> None:
     if not emails:
         console.print("[yellow]Fetch emails first.[/yellow]")
         return
@@ -279,9 +276,7 @@ async def cmd_label_email(
         console.print("[red]✗ Labelling failed.[/red]")
 
 
-async def cmd_classify_email(
-    agent_svc: AgentService, emails: list, session: dict
-) -> None:
+async def cmd_classify_email(agent_svc: AgentService, emails: list, session: dict) -> None:
     if not emails:
         console.print("[yellow]Fetch emails first.[/yellow]")
         return
@@ -323,9 +318,7 @@ async def cmd_start_session(
     session: dict,
 ) -> None:
     """Create a classification session, fetch emails, run batch classification."""
-    max_results = int(
-        Prompt.ask("How many emails?", choices=["10", "15", "20"], default="10")
-    )
+    max_results = int(Prompt.ask("How many emails?", choices=["10", "15", "20"], default="10"))
     user_id = UUID(session["user_id"])
 
     with console.status("[yellow]Creating session and fetching emails…[/yellow]"):
@@ -367,10 +360,11 @@ async def cmd_start_session(
         + (f"  [yellow]({result.failed} failed)[/yellow]" if result.failed else "")
     )
     access_token = session.get("access_token", "")
-    review_url = f"http://localhost:8001/api/review/{session_id}"
+    display_url = f"http://localhost:8001/api/review/{session_id}"
+    review_url = display_url
     if access_token:
         review_url += f"?token={access_token}"
-    console.print(Panel(f"[link={review_url}]{review_url}[/link]", title="Review UI"))
+    console.print(Panel(f"[link={display_url}]{display_url}[/link]", title="Review UI"))
     webbrowser.open(review_url)
 
 
@@ -383,10 +377,11 @@ async def cmd_open_review(session: dict) -> None:
         )
         return
     access_token = session.get("access_token", "")
-    review_url = f"http://localhost:8001/api/review/{last_session_id}"
+    display_url = f"http://localhost:8001/api/review/{last_session_id}"
+    review_url = display_url
     if access_token:
         review_url += f"?token={access_token}"
-    console.print(f"[cyan]Opening:[/cyan] {review_url}")
+    console.print(f"[cyan]Opening:[/cyan] {display_url}")
     webbrowser.open(review_url)
 
 
