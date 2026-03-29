@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Encryption
     fernet_secret_key: SecretStr = Field(..., alias="FERNET_SECRET_KEY")
+    jwt_secret_key: SecretStr = Field(..., alias="JWT_SECRET_KEY")
 
     # External runtimes (optional - uses mock mode if not provided)
     agent_runtime_base_url: Optional[AnyHttpUrl] = Field(
