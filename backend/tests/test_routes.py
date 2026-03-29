@@ -497,7 +497,7 @@ def test_review_page_escapes_xss_in_subject(
     try:
         response = authed_client.get(f"/api/review/{uuid4()}")
         assert response.status_code == 200
-        assert "<script>" not in response.text
+        assert '<script>alert("xss")</script>' not in response.text
         assert "&lt;script&gt;" in response.text
     finally:
         authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
@@ -615,7 +615,7 @@ def test_review_page_escapes_xss_in_gmail_message_id(
     try:
         response = authed_client.get(f"/api/review/{uuid4()}")
         assert response.status_code == 200
-        assert "<script>" not in response.text
+        assert '"><script>alert(1)</script>' not in response.text
         assert "&lt;script&gt;" in response.text
     finally:
         authed_client.app.dependency_overrides.pop(get_classification_session_service, None)

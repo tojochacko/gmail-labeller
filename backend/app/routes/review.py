@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from hmac import compare_digest
 from uuid import UUID
@@ -68,13 +69,19 @@ async def review_page(
             else "#6b7280"
         )
         confidence_str = f"{confidence:.0%}" if confidence is not None else "–"
-        subject_escaped = (email.subject or "(no subject)").replace('"', "&quot;")
-        sender_escaped = (email.sender_email or "–").replace('"', "&quot;")
+        subject_raw = email.subject or "(no subject)"
+        subject_title = html.escape(subject_raw)
+        subject_cell = html.escape(subject_raw[:60])
+        sender_raw = email.sender_email or "–"
+        sender_title = html.escape(sender_raw)
+        sender_cell = html.escape(sender_raw[:35])
+        gmail_id_safe = html.escape(email.gmail_message_id or "")
+        suggestion_safe = html.escape(suggestion)
         rows_html += f"""
-        <tr data-email-id="{email.id}" data-gmail-id="{email.gmail_message_id}">
-          <td title="{subject_escaped}">{(email.subject or "(no subject)")[:60]}</td>
-          <td title="{sender_escaped}">{(email.sender_email or "–")[:35]}</td>
-          <td class="label-cell" style="color:{label_color};font-weight:600">{suggestion}</td>
+        <tr data-email-id="{email.id}" data-gmail-id="{gmail_id_safe}">
+          <td title="{subject_title}">{subject_cell}</td>
+          <td title="{sender_title}">{sender_cell}</td>
+          <td class="label-cell" style="color:{label_color};font-weight:600">{suggestion_safe}</td>
           <td class="conf-cell">{confidence_str}</td>
           <td class="actions">
             <button class="btn-correct" data-new-label="Important"
@@ -90,7 +97,7 @@ async def review_page(
         str(session_id), str(current_user), settings.jwt_secret_key.get_secret_value()
     )
 
-    html = f"""<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -234,7 +241,7 @@ async def review_page(
   </script>
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html_content)
 
 
 @router.post("/{session_id}/correct")
