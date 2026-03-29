@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from ..auth import make_csrf_token
+from ..config import Settings, get_settings
 from ..dependencies import (
     get_classification_session_service,
     get_current_user,
@@ -41,6 +43,7 @@ async def review_page(
     session_id: UUID,
     current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
+    settings: Settings = Depends(get_settings),
 ) -> HTMLResponse:
     """Serve the self-contained HTML review UI for a session."""
     session = await session_svc.get_session(session_id)
@@ -57,8 +60,10 @@ async def review_page(
         suggestion = item["suggestion"] or "Uncategorized"
         confidence = item["confidence"]
         label_color = (
-            "#22c55e" if suggestion == "Important"
-            else "#f59e0b" if suggestion == "Not Important"
+            "#22c55e"
+            if suggestion == "Important"
+            else "#f59e0b"
+            if suggestion == "Not Important"
             else "#6b7280"
         )
         confidence_str = f"{confidence:.0%}" if confidence is not None else "–"
@@ -80,6 +85,9 @@ async def review_page(
         </tr>"""
 
     session_id_str = str(session_id)
+    csrf_token = make_csrf_token(
+        str(session_id), str(current_user), settings.jwt_secret_key.get_secret_value()
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -139,13 +147,18 @@ async def review_page(
 
   <script>
     const SESSION_ID = "{session_id_str}";
+    const CSRF_TOKEN = "{csrf_token}";
     const params = new URLSearchParams(window.location.search);
     const TOKEN = params.get('token') || '';
+    if (TOKEN) {{
+      window.history.replaceState({{}}, '', window.location.pathname);
+    }}
 
     function authHeaders() {{
-      return TOKEN
-        ? {{"Content-Type": "application/json", "Authorization": "Bearer " + TOKEN}}
-        : {{"Content-Type": "application/json"}};
+      const h = {{"Content-Type": "application/json"}};
+      if (TOKEN) h["Authorization"] = "Bearer " + TOKEN;
+      if (CSRF_TOKEN) h["X-CSRF-Token"] = CSRF_TOKEN;
+      return h;
     }}
 
     function toast(msg, ok=true) {{

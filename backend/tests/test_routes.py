@@ -260,3 +260,102 @@ def test_oauth_status_returns_200_for_own_user(
     response = authed_client.get(f"/api/oauth/status/{auth_user_id}")
     assert response.status_code == 200
     assert response.json()["connected"] is True
+
+
+def test_review_page_contains_csrf_token(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """Review page HTML must contain a 64-char hex CSRF_TOKEN JS variable."""
+    import re
+    from datetime import datetime, timezone
+
+    from cryptography.fernet import Fernet
+
+    from backend.app.config import Settings, get_settings
+    from backend.app.dependencies import get_classification_session_service
+    from backend.app.schemas import EmailItem
+
+    test_settings = Settings.model_validate({
+        "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+        "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+        "JWT_SECRET_KEY": "test-jwt-secret-do-not-use-in-prod",
+        "GOOGLE_OAUTH_CLIENT_ID": "client-id",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+        "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost/callback",
+        "GOOGLE_OAUTH_SCOPE": "https://www.googleapis.com/auth/gmail.modify",
+    })
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return [{
+                "email": EmailItem(
+                    id=uuid4(), gmail_message_id="msg-1", thread_id="t-1",
+                    subject="Test", received_at=datetime.now(timezone.utc),
+                ),
+                "suggestion": "Important",
+                "confidence": 0.9,
+            }]
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    authed_client.app.dependency_overrides[get_settings] = lambda: test_settings
+    try:
+        response = authed_client.get(f"/api/review/{uuid4()}")
+        assert response.status_code == 200
+        assert re.search(r'const CSRF_TOKEN = "[0-9a-f]{64}";', response.text), (
+            "CSRF_TOKEN not found or malformed in page HTML"
+        )
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+        authed_client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_review_page_strips_token_from_url(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """Review page JS must call window.history.replaceState to strip ?token= from URL."""
+    from datetime import datetime, timezone
+
+    from cryptography.fernet import Fernet
+
+    from backend.app.config import Settings, get_settings
+    from backend.app.dependencies import get_classification_session_service
+    from backend.app.schemas import EmailItem
+
+    test_settings = Settings.model_validate({
+        "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+        "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+        "JWT_SECRET_KEY": "test-jwt-secret-do-not-use-in-prod",
+        "GOOGLE_OAUTH_CLIENT_ID": "client-id",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+        "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost/callback",
+        "GOOGLE_OAUTH_SCOPE": "https://www.googleapis.com/auth/gmail.modify",
+    })
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return [{
+                "email": EmailItem(
+                    id=uuid4(), gmail_message_id="msg-1", thread_id="t-1",
+                    subject="Test", received_at=datetime.now(timezone.utc),
+                ),
+                "suggestion": "Important",
+                "confidence": 0.9,
+            }]
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    authed_client.app.dependency_overrides[get_settings] = lambda: test_settings
+    try:
+        response = authed_client.get(f"/api/review/{uuid4()}")
+        assert response.status_code == 200
+        assert "window.history.replaceState" in response.text
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+        authed_client.app.dependency_overrides.pop(get_settings, None)
