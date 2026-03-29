@@ -9,7 +9,7 @@ Session handoff document. Updated at the end of each session.
 ### 1. Security Audit (re-run)
 Re-ran a full security audit after substantial codebase changes. New report in `docs/SECURITY_AUDIT_REPORT.md` covers 25 findings (12 prior + 13 new), rated CRIT/HIGH/MED/LOW.
 
-### 2. JWT Authentication — CRIT-01, CRIT-02, CRIT-03 (complete)
+### 2. JWT Authentication — CRIT-01, CRIT-02, CRIT-03, HIGH-02 (complete)
 Full JWT auth implementation across all FastAPI endpoints. Key changes:
 
 - **`backend/app/auth.py`** (new): `create_access_token`, `decode_access_token`, `require_auth` FastAPI dependency (reads `Authorization: Bearer` header or `?token=` query param)
@@ -21,19 +21,20 @@ Full JWT auth implementation across all FastAPI endpoints. Key changes:
 - **`backend/app/routes/sessions.py`**: all 5 endpoints protected; `_get_owned_session` helper enforces 404/403 ownership checks
 - **`backend/app/routes/patterns.py`**: all 6 endpoints protected
 - **`backend/app/routes/review.py`**: auth on page + correct endpoints; JS reads `?token=` from URL and attaches as `Authorization: Bearer` on all fetch calls
-- **`backend/app/routes/debug.py`**: `_require_dev` dependency — returns 403 unless `ENVIRONMENT=development`
+- **`backend/app/routes/agent.py`**: both `/api/runs` and `/api/runs/{run_id}` protected; `user_id` overridden from JWT
+- **`backend/app/routes/debug.py`**: `_require_dev` dependency — returns 403 unless `ENVIRONMENT=development`; design decision (runtime gating over conditional registration) documented in `routes/__init__.py`
 - **`backend/cli.py`**: generates JWT locally after OAuth; persists it in `~/.gmail-labeler/session.json` (chmod 0o600); appends `?token=` to review URLs (token hidden from terminal display); retry loop if user presses Enter before OAuth completes
 
 ### 3. New Tests Added
 - `backend/tests/test_auth.py`: JWT roundtrip, tampered/expired/malformed token 401 tests
-- `backend/tests/test_routes.py`: 401/403 tests for every protected route; happy-path tests; `_require_dev` unit tests for both dev and production modes
+- `backend/tests/test_routes.py`: 401/403 tests for every protected route; happy-path tests; `_require_dev` unit tests for both dev and production modes; agent run auth tests
 
 ---
 
 ## Current State
 
 - **Branch:** `main`
-- **Tests:** 118/118 passing in Docker container
+- **Tests:** 120/120 passing in Docker container
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
 - **OAuth:** End-to-end flow working with JWT; CLI stores token and appends to review URL
 - **Auth:** All routes protected — unauthenticated requests return 401; cross-user access returns 403
