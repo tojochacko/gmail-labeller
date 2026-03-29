@@ -458,3 +458,164 @@ def test_correct_label_accepts_valid_csrf_token(
     finally:
         authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
         authed_client.app.dependency_overrides.pop(get_settings, None)
+
+
+# ---------------------------------------------------------------------------
+# Review page — XSS escaping
+# ---------------------------------------------------------------------------
+
+def test_review_page_escapes_xss_in_subject(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """Email subject with an XSS payload must be HTML-escaped in the rendered page."""
+    from datetime import datetime, timezone
+
+    from backend.app.dependencies import get_classification_session_service
+    from backend.app.schemas import EmailItem
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return [
+                {
+                    "email": EmailItem(
+                        id=uuid4(),
+                        gmail_message_id="msg-1",
+                        thread_id="t-1",
+                        subject='<script>alert("xss")</script>',
+                        received_at=datetime.now(timezone.utc),
+                    ),
+                    "suggestion": "Important",
+                    "confidence": 0.9,
+                }
+            ]
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    try:
+        response = authed_client.get(f"/api/review/{uuid4()}")
+        assert response.status_code == 200
+        assert "<script>" not in response.text
+        assert "&lt;script&gt;" in response.text
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+
+
+def test_review_page_escapes_xss_in_sender(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """Sender email with an XSS payload must be HTML-escaped in the rendered page."""
+    from datetime import datetime, timezone
+
+    from backend.app.dependencies import get_classification_session_service
+    from backend.app.schemas import EmailItem
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return [
+                {
+                    "email": EmailItem(
+                        id=uuid4(),
+                        gmail_message_id="msg-1",
+                        thread_id="t-1",
+                        subject="Normal subject",
+                        sender_email='<img src=x onerror=alert(1)>@evil.com',
+                        received_at=datetime.now(timezone.utc),
+                    ),
+                    "suggestion": "Not Important",
+                    "confidence": 0.5,
+                }
+            ]
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    try:
+        response = authed_client.get(f"/api/review/{uuid4()}")
+        assert response.status_code == 200
+        assert "<img" not in response.text
+        assert "&lt;img" in response.text
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+
+
+def test_review_page_escapes_xss_in_suggestion(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """AI suggestion label with HTML must be escaped in the rendered page."""
+    from datetime import datetime, timezone
+
+    from backend.app.dependencies import get_classification_session_service
+    from backend.app.schemas import EmailItem
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return [
+                {
+                    "email": EmailItem(
+                        id=uuid4(),
+                        gmail_message_id="msg-1",
+                        thread_id="t-1",
+                        subject="Normal subject",
+                        received_at=datetime.now(timezone.utc),
+                    ),
+                    "suggestion": '<b onclick=alert(1)>Important</b>',
+                    "confidence": 0.8,
+                }
+            ]
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    try:
+        response = authed_client.get(f"/api/review/{uuid4()}")
+        assert response.status_code == 200
+        assert "<b " not in response.text
+        assert "&lt;b " in response.text
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+
+
+def test_review_page_escapes_xss_in_gmail_message_id(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """gmail_message_id with HTML must be escaped in data-gmail-id attribute."""
+    from datetime import datetime, timezone
+
+    from backend.app.dependencies import get_classification_session_service
+    from backend.app.schemas import EmailItem
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return [
+                {
+                    "email": EmailItem(
+                        id=uuid4(),
+                        gmail_message_id='"><script>alert(1)</script>',
+                        thread_id="t-1",
+                        subject="Normal subject",
+                        received_at=datetime.now(timezone.utc),
+                    ),
+                    "suggestion": "Important",
+                    "confidence": 0.9,
+                }
+            ]
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    try:
+        response = authed_client.get(f"/api/review/{uuid4()}")
+        assert response.status_code == 200
+        assert "<script>" not in response.text
+        assert "&lt;script&gt;" in response.text
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
