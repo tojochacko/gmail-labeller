@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from ..dependencies import (
     get_classification_session_service,
+    get_current_user,
     get_label_service,
 )
 from ..schemas.labels import ApplyLabelRequest
@@ -38,12 +39,15 @@ class ApproveRequest(BaseModel):
 @router.get("/{session_id}", response_class=HTMLResponse)
 async def review_page(
     session_id: UUID,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
 ) -> HTMLResponse:
     """Serve the self-contained HTML review UI for a session."""
     session = await session_svc.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session["user_id"] != str(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
     review_items = await session_svc.get_session_review_items(session_id)
 
@@ -135,6 +139,14 @@ async def review_page(
 
   <script>
     const SESSION_ID = "{session_id_str}";
+    const params = new URLSearchParams(window.location.search);
+    const TOKEN = params.get('token') || '';
+
+    function authHeaders() {{
+      return TOKEN
+        ? {{"Content-Type": "application/json", "Authorization": "Bearer " + TOKEN}}
+        : {{"Content-Type": "application/json"}};
+    }}
 
     function toast(msg, ok=true) {{
       const el = document.getElementById("toast");
@@ -160,7 +172,7 @@ async def review_page(
       try {{
         const resp = await fetch(`/api/review/${{SESSION_ID}}/correct`, {{
           method: "POST",
-          headers: {{"Content-Type": "application/json"}},
+          headers: authHeaders(),
           body: JSON.stringify({{
             email_id: emailId,
             gmail_message_id: gmailId,
@@ -191,6 +203,7 @@ async def review_page(
       try {{
         const resp = await fetch(`/api/sessions/${{SESSION_ID}}/cleanup`, {{
           method: "POST",
+          headers: authHeaders(),
         }});
         if (!resp.ok) throw new Error(await resp.text());
         const data = await resp.json();
@@ -214,6 +227,7 @@ async def review_page(
 async def correct_label(
     session_id: UUID,
     request: CorrectionRequest,
+    current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
     label_svc: LabelService = Depends(get_label_service),
 ) -> dict:
@@ -226,6 +240,8 @@ async def correct_label(
     session = await session_svc.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session["user_id"] != str(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
     user_id = UUID(session["user_id"])
 
@@ -240,4 +256,4 @@ async def correct_label(
         return {"success": True, "label": request.new_label}
     except Exception as e:
         logger.error("Correction failed for email %s: %s", request.email_id, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal error occurred.")
