@@ -34,7 +34,7 @@ Full JWT auth implementation across all FastAPI endpoints. Key changes:
 ## Current State
 
 - **Branch:** `main`
-- **Tests:** 120/120 passing in Docker container
+- **Tests:** 130/130 passing in Docker container
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
 - **OAuth:** End-to-end flow working with JWT; CLI stores token and appends to review URL
 - **Auth:** All routes protected — unauthenticated requests return 401; cross-user access returns 403
@@ -47,7 +47,6 @@ Full JWT auth implementation across all FastAPI endpoints. Key changes:
 
 ### Priority 1 — Remaining CRIT/HIGH findings (from `docs/SECURITY_AUDIT_REPORT.md`)
 - **CRIT-04**: Stored XSS in review UI — labels/subjects rendered unescaped in HTML
-- **CRIT-05**: Review page CSRF — state-changing fetch calls need CSRF tokens
 - **HIGH-01**: OAuth state not verified server-side (replay attack possible)
 - **HIGH-03**: Prompt injection via learned patterns
 - **HIGH-04**: Unredacted snippets logged and sent to LLM
@@ -89,3 +88,5 @@ Saved in `docs/superpowers/plans/`:
 - `2026-03-27-gmail-api-direct.md` — completed ✅
 - `2026-03-27-job-alert-labeling.md` — completed ✅
 - `2026-03-29-crit-01-jwt-auth.md` — completed ✅
+- `2026-03-29-crit-04-xss-review-ui.md` — pending ⏳
+- `2026-03-29-crit-05-csrf-review-ui.md` — completed ✅

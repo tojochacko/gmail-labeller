@@ -439,7 +439,7 @@ No length limit or character pattern on this externally supplied string.
 | P2 | MED-03 | Replace `str(e)` with generic error messages | Low |
 | P2 | MED-04 | Redact PII at ingestion time before DB write | Medium |
 | P2 | MED-05 | Add validation/length limit to Gmail query param | Low |
-| P3 | CRIT-05 | Add CSRF tokens to review UI fetch calls | Medium |
+| P0 | CRIT-05 | CSRF protection — HMAC token on correction endpoint | **FIXED** |
 | P3 | MED-10 | Configure SQLite pool limits; validate DATABASE_URL scheme | Low |
 | P3 | LOW-01 | Remove PII from log statements | Low |
 | P3 | LOW-02 | Add Fernet key startup validator | Low |
