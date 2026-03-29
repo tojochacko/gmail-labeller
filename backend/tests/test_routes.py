@@ -359,3 +359,102 @@ def test_review_page_strips_token_from_url(
     finally:
         authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
         authed_client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_correct_label_rejects_missing_csrf_token(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """POST /api/review/{id}/correct without X-CSRF-Token must return 403."""
+    from backend.app.dependencies import get_classification_session_service
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return []
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    try:
+        response = authed_client.post(
+            f"/api/review/{uuid4()}/correct",
+            json={"email_id": str(uuid4()), "gmail_message_id": "msg-1", "new_label": "Important"},
+        )
+        assert response.status_code == 403
+        assert "CSRF" in response.json()["detail"]
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+
+
+def test_correct_label_rejects_wrong_csrf_token(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """POST /api/review/{id}/correct with an incorrect X-CSRF-Token must return 403."""
+    from backend.app.dependencies import get_classification_session_service
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return []
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    try:
+        response = authed_client.post(
+            f"/api/review/{uuid4()}/correct",
+            json={"email_id": str(uuid4()), "gmail_message_id": "msg-1", "new_label": "Important"},
+            headers={"X-CSRF-Token": "a" * 64},  # valid format, wrong value
+        )
+        assert response.status_code == 403
+        assert "CSRF" in response.json()["detail"]
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+
+
+def test_correct_label_accepts_valid_csrf_token(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+) -> None:
+    """POST /api/review/{id}/correct with the correct X-CSRF-Token must return 200."""
+    from cryptography.fernet import Fernet
+
+    from backend.app.auth import make_csrf_token
+    from backend.app.config import Settings, get_settings
+    from backend.app.dependencies import get_classification_session_service
+
+    _JWT_SECRET = "test-jwt-secret-do-not-use-in-prod"
+    test_settings = Settings.model_validate({
+        "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+        "FERNET_SECRET_KEY": Fernet.generate_key().decode(),
+        "JWT_SECRET_KEY": _JWT_SECRET,
+        "GOOGLE_OAUTH_CLIENT_ID": "client-id",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "client-secret",
+        "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost/callback",
+        "GOOGLE_OAUTH_SCOPE": "https://www.googleapis.com/auth/gmail.modify",
+    })
+    session_id = uuid4()
+    csrf_token = make_csrf_token(str(session_id), str(auth_user_id), _JWT_SECRET)
+
+    class _FakeSvc:
+        async def get_session(self, _: UUID) -> dict:
+            return {"user_id": str(auth_user_id)}
+
+        async def get_session_review_items(self, _: UUID) -> list:
+            return []
+
+    authed_client.app.dependency_overrides[get_classification_session_service] = _FakeSvc
+    authed_client.app.dependency_overrides[get_settings] = lambda: test_settings
+    try:
+        response = authed_client.post(
+            f"/api/review/{session_id}/correct",
+            json={"email_id": str(uuid4()), "gmail_message_id": "msg-1", "new_label": "Important"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+    finally:
+        authed_client.app.dependency_overrides.pop(get_classification_session_service, None)
+        authed_client.app.dependency_overrides.pop(get_settings, None)

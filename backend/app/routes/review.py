@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from hmac import compare_digest
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -240,9 +241,11 @@ async def review_page(
 async def correct_label(
     session_id: UUID,
     request: CorrectionRequest,
+    x_csrf_token: str | None = Header(default=None),
     current_user: UUID = Depends(get_current_user),
     session_svc: ClassificationSessionService = Depends(get_classification_session_service),
     label_svc: LabelService = Depends(get_label_service),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     """Apply a human correction to an email's label (triggers pattern learning)."""
     if request.new_label not in ("Important", "Not Important"):
@@ -255,6 +258,12 @@ async def correct_label(
         raise HTTPException(status_code=404, detail="Session not found")
     if session["user_id"] != str(current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    expected_csrf = make_csrf_token(
+        str(session_id), str(current_user), settings.jwt_secret_key.get_secret_value()
+    )
+    if not compare_digest(x_csrf_token or "", expected_csrf):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF token invalid.")
 
     user_id = UUID(session["user_id"])
 
