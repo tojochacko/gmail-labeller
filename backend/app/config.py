@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     fernet_secret_key: SecretStr = Field(..., alias="FERNET_SECRET_KEY")
     jwt_secret_key: SecretStr = Field(..., alias="JWT_SECRET_KEY")
 
+    # Environment
+    environment: str = Field(default="production", alias="ENVIRONMENT")
+
     # External runtimes (optional - uses mock mode if not provided)
     agent_runtime_base_url: Optional[AnyHttpUrl] = Field(
         default=None, alias="AGENT_RUNTIME_BASE_URL"

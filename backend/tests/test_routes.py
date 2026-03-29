@@ -98,6 +98,12 @@ def test_cleanup_session_requires_auth(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_get_session_emails_requires_auth(client: TestClient) -> None:
+    """GET /api/sessions/{id}/emails without a token must return 401."""
+    response = client.get(f"/api/sessions/{uuid4()}/emails")
+    assert response.status_code == 401
+
+
 def test_list_patterns_requires_auth(client: TestClient) -> None:
     """GET /api/patterns without a token must return 401."""
     response = client.get("/api/patterns")
@@ -144,3 +150,9 @@ def test_agent_run_endpoints(client: TestClient, fake_agent_service) -> None:
     status_data = status_response.json()
     assert status_data["status"] == "completed"
     assert status_data["result_payload"]["summary"] == "done"
+
+
+def test_debug_endpoints_disabled_in_non_dev(client: TestClient) -> None:
+    """Debug endpoints must return 403 when environment is not 'development'."""
+    response = client.get(f"/api/debug/emails/{uuid4()}")
+    assert response.status_code == 403

@@ -1,12 +1,13 @@
-"""Debug routes for troubleshooting."""
+"""Debug routes for troubleshooting — only active when ENVIRONMENT=development."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
+from ..config import Settings, get_settings
 from ..dependencies import get_db_service
 from ..db.models import AgentRun, Email
 from ..services.db_service import DBService
@@ -14,7 +15,15 @@ from ..services.db_service import DBService
 router = APIRouter()
 
 
-@router.get("/emails/{user_id}")
+def _require_dev(settings: Settings = Depends(get_settings)) -> None:
+    if settings.environment != "development":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Debug endpoints are only available in development.",
+        )
+
+
+@router.get("/emails/{user_id}", dependencies=[Depends(_require_dev)])
 async def debug_emails(
     user_id: UUID,
     db: DBService = Depends(get_db_service),
@@ -36,7 +45,7 @@ async def debug_emails(
     return {"count": len(emails), "emails": emails}
 
 
-@router.get("/agent-runs/{user_id}")
+@router.get("/agent-runs/{user_id}", dependencies=[Depends(_require_dev)])
 async def debug_agent_runs(
     user_id: UUID,
     db: DBService = Depends(get_db_service),
