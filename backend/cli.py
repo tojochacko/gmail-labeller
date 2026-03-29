@@ -8,7 +8,6 @@ import json
 import secrets
 import webbrowser
 from pathlib import Path
-from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import logging
@@ -20,7 +19,8 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from backend.app.config import get_settings
+from backend.app.auth import create_access_token
+from backend.app.config import Settings, get_settings
 from backend.app.db.engine import make_engine, make_session_factory
 from backend.app.schemas.agent import AgentRunRequest
 from backend.app.schemas.labels import ApplyLabelRequest
@@ -109,7 +109,12 @@ def load_session() -> dict | None:
     return None
 
 
-def save_session(user_id: str, email: str, last_session_id: str | None = None) -> None:
+def save_session(
+    user_id: str,
+    email: str,
+    last_session_id: str | None = None,
+    access_token: str | None = None,
+) -> None:
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {"user_id": user_id, "email": email}
     if last_session_id:
@@ -118,6 +123,12 @@ def save_session(user_id: str, email: str, last_session_id: str | None = None) -
         existing = json.loads(SESSION_FILE.read_text())
         if "last_session_id" in existing:
             data["last_session_id"] = existing["last_session_id"]
+    if access_token:
+        data["access_token"] = access_token
+    elif SESSION_FILE.exists():
+        existing = json.loads(SESSION_FILE.read_text())
+        if "access_token" in existing:
+            data["access_token"] = existing["access_token"]
     SESSION_FILE.write_text(json.dumps(data))
 
 
@@ -151,7 +162,7 @@ def build_services():
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 
-async def cmd_connect(db: DBService, gmail: GmailService) -> dict | None:
+async def cmd_connect(db: DBService, gmail: GmailService, settings: Settings) -> dict | None:
     """Run the OAuth flow and persist the session."""
     email = Prompt.ask("[cyan]Your Google account email[/cyan]")
     user_id = str(await db.upsert_user(uuid4(), email))
@@ -161,16 +172,26 @@ async def cmd_connect(db: DBService, gmail: GmailService) -> dict | None:
     console.print("\nOpen this URL in your browser to connect Gmail:\n")
     print(str(auth_url))
     console.print("\n[dim]Complete the OAuth flow in your browser, then press Enter.[/dim]")
-    input()
 
-    tokens = await db.fetch_gmail_tokens(UUID(user_id))
-    if not tokens:
-        console.print("[red]No tokens found. Did you complete the OAuth flow?[/red]")
-        return None
+    while True:
+        input()
+        tokens = await db.fetch_gmail_tokens(UUID(user_id))
+        if tokens:
+            break
+        console.print(
+            "[yellow]No tokens found yet — did you complete the OAuth flow in your browser?"
+            "[/yellow]"
+        )
+        if not Confirm.ask("[dim]Try again?[/dim]", default=True):
+            console.print("[red]Cancelled.[/red]")
+            return None
 
-    save_session(user_id, email)
+    access_token = create_access_token(
+        UUID(user_id), settings.jwt_secret_key.get_secret_value()
+    )
+    save_session(user_id, email, access_token=access_token)
     console.print(f"[green]✓ Connected as {email}[/green]  (user_id: {user_id})")
-    return {"user_id": user_id, "email": email}
+    return {"user_id": user_id, "email": email, "access_token": access_token}
 
 
 async def cmd_disconnect(db: DBService, session: dict) -> None:
@@ -345,7 +366,10 @@ async def cmd_start_session(
         f"[green]✓ Classified {result.classified}/{result.total} emails[/green]"
         + (f"  [yellow]({result.failed} failed)[/yellow]" if result.failed else "")
     )
+    access_token = session.get("access_token", "")
     review_url = f"http://localhost:8001/api/review/{session_id}"
+    if access_token:
+        review_url += f"?token={access_token}"
     console.print(Panel(f"[link={review_url}]{review_url}[/link]", title="Review UI"))
     webbrowser.open(review_url)
 
@@ -358,7 +382,10 @@ async def cmd_open_review(session: dict) -> None:
             "[yellow]No previous session found. Run 'Start classification session' first.[/yellow]"
         )
         return
+    access_token = session.get("access_token", "")
     review_url = f"http://localhost:8001/api/review/{last_session_id}"
+    if access_token:
+        review_url += f"?token={access_token}"
     console.print(f"[cyan]Opening:[/cyan] {review_url}")
     webbrowser.open(review_url)
 
@@ -424,7 +451,7 @@ async def main() -> None:
         if choice == "0":
             break
         elif choice == "1":
-            result = await cmd_connect(db, gmail)
+            result = await cmd_connect(db, gmail, settings)
             if result:
                 session = result
         elif choice == "2":
