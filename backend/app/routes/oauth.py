@@ -10,9 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth import create_access_token
 from ..config import Settings, get_settings
-from ..dependencies import get_db_service, get_gmail_service
+from ..dependencies import get_db_service, get_gmail_service, get_current_user
 from ..schemas.oauth import (
-    OAuthCallbackRequest,
     OAuthCallbackResponse,
     OAuthStartRequest,
     OAuthStartResponse,
@@ -80,14 +79,19 @@ async def oauth_callback(
 )
 async def get_oauth_status(
     user_id: UUID,
+    current_user: UUID = Depends(get_current_user),
     supabase: DBService = Depends(get_db_service),
 ) -> OAuthStatusResponse:
     """Return whether the user has an active Gmail connection."""
+    if user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     tokens = await supabase.fetch_gmail_tokens(user_id)
     if not tokens:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No Gmail connection found for user.",
         )
-
     return OAuthStatusResponse(connected=True, expires_at=tokens.expires_at)

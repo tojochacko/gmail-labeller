@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -205,3 +205,18 @@ def test_require_dev_guard_passes_in_development() -> None:
     )
     # Should not raise — guard passes when environment is development
     _require_dev(settings=settings)
+
+
+def test_oauth_status_requires_auth(client: TestClient) -> None:
+    """GET /api/oauth/status/{user_id} without a token must return 401."""
+    response = client.get(f"/api/oauth/status/{uuid4()}")
+    assert response.status_code == 401
+
+
+def test_oauth_status_forbidden_for_other_user(
+    authed_client: TestClient, auth_user_id: UUID
+) -> None:
+    """GET /api/oauth/status/{user_id} for a different user must return 403."""
+    different_user_id = uuid4()
+    response = authed_client.get(f"/api/oauth/status/{different_user_id}")
+    assert response.status_code == 403
