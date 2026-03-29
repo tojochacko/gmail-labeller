@@ -220,3 +220,26 @@ def test_oauth_status_forbidden_for_other_user(
     different_user_id = uuid4()
     response = authed_client.get(f"/api/oauth/status/{different_user_id}")
     assert response.status_code == 403
+    assert response.json()["detail"] == "Access denied."
+
+
+def test_oauth_status_returns_200_for_own_user(
+    authed_client: TestClient,
+    auth_user_id: UUID,
+    fake_supabase,  # noqa: ANN001
+) -> None:
+    """GET /api/oauth/status/{user_id} for the authenticated user's own id must return 200."""
+    from datetime import datetime, timezone
+
+    from pydantic import SecretStr
+
+    from backend.app.schemas import GmailTokens
+
+    fake_supabase.tokens[auth_user_id] = GmailTokens(
+        access_token=SecretStr("access"),
+        refresh_token=SecretStr("refresh"),
+        expires_at=datetime.now(timezone.utc),
+    )
+    response = authed_client.get(f"/api/oauth/status/{auth_user_id}")
+    assert response.status_code == 200
+    assert response.json()["connected"] is True
