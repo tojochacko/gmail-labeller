@@ -6,6 +6,26 @@ Session handoff document. Updated at the end of each session.
 
 ## What Was Done This Session
 
+### HIGH-01: OAuth State CSRF Protection (complete)
+
+Fixed the OAuth CSRF vulnerability where the `state` parameter was generated but never verified server-side, allowing an attacker to craft a callback linking an arbitrary code to a victim's account.
+
+- **`backend/app/db/models.py`**: Added `OAuthState` model (`oauth_states` table — `state` PK, `created_at`)
+- **`backend/alembic/versions/a1b2c3d4e5f6_add_oauth_state_table.py`**: Migration for new table
+- **`backend/app/services/db_service.py`**: Added `store_oauth_state` and `verify_and_consume_oauth_state` (10-min TTL, atomic delete on both valid and expired paths)
+- **`backend/app/routes/oauth.py`**: `/start` stores state after `upsert_user`; `/callback` verifies+consumes state before token exchange — returns 400 on invalid/expired/replayed state
+- **`backend/tests/test_db_service.py`**: 3 new DB-layer tests (happy path, unknown state, expired state)
+- **`backend/tests/test_routes.py`**: Updated callback test to pre-seed state; added 3 rejection tests (unknown, replayed, invalid format)
+- **`backend/tests/conftest.py`**: `FakeDBService` updated with `store_oauth_state` / `verify_and_consume_oauth_state`
+
+### HIGH-03: Already Fixed (confirmed)
+
+Audit of `backend/app/routes/sessions.py` confirmed that all four session endpoints (`get_session`, `run_session`, `get_session_emails`, `cleanup_session`) already call `_get_owned_session`. No new work needed.
+
+---
+
+## Prior Session Work
+
 ### 1. Security Audit (re-run)
 Re-ran a full security audit after substantial codebase changes. New report in `docs/SECURITY_AUDIT_REPORT.md` covers 25 findings (12 prior + 13 new), rated CRIT/HIGH/MED/LOW.
 
@@ -34,7 +54,7 @@ Full JWT auth implementation across all FastAPI endpoints. Key changes:
 ## Current State
 
 - **Branch:** `main`
-- **Tests:** 134/134 passing in Docker container
+- **Tests:** 140/140 passing in Docker container
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
 - **OAuth:** End-to-end flow working with JWT; CLI stores token and appends to review URL
 - **Auth:** All routes protected — unauthenticated requests return 401; cross-user access returns 403
