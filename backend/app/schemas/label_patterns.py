@@ -1,5 +1,6 @@
 """Label patterns schemas for AI learning."""
 
+import json
 import re
 from datetime import datetime
 from typing import Literal, Optional
@@ -115,24 +116,25 @@ class LearnedContext(BaseModel):
     not_important_keywords: list[str] = Field(default_factory=list)
 
     def format_for_prompt(self) -> str:
-        """Format learned patterns as prompt context."""
-        parts = []
+        """Format learned patterns as a JSON block for LLM prompt injection.
 
+        JSON encoding ensures pattern values cannot escape their data context
+        and inject instructions into the prompt.
+        """
+        data: dict[str, list[str]] = {}
         if self.important_domains:
-            parts.append(f"Important email domains: {', '.join(self.important_domains)}")
+            data["important_domains"] = self.important_domains
         if self.important_keywords:
-            parts.append(f"Important keywords: {', '.join(self.important_keywords)}")
+            data["important_keywords"] = self.important_keywords
         if self.not_important_domains:
-            parts.append(f"Not important email domains: {', '.join(self.not_important_domains)}")
+            data["not_important_domains"] = self.not_important_domains
         if self.not_important_keywords:
-            parts.append(f"Not important keywords: {', '.join(self.not_important_keywords)}")
+            data["not_important_keywords"] = self.not_important_keywords
 
-        if not parts:
+        if not data:
             return ""
 
-        return "\n\nLearned Patterns (from previous labeling):\n" + "\n".join(
-            f"- {part}" for part in parts
-        )
+        return "\n\nLearned Patterns:\n" + json.dumps(data)
 
 
 class PatternExtractionRequest(BaseModel):

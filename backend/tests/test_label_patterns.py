@@ -100,3 +100,54 @@ def test_pattern_update_pattern_value_max_length() -> None:
     """LabelPatternUpdate must reject pattern_value longer than 100 chars."""
     with pytest.raises(ValidationError):
         LabelPatternUpdate(pattern_value="a" * 101)
+
+
+# ---------------------------------------------------------------------------
+# format_for_prompt tests
+# ---------------------------------------------------------------------------
+
+def test_format_for_prompt_returns_empty_string_when_no_patterns() -> None:
+    """format_for_prompt returns '' when all lists are empty."""
+    ctx = LearnedContext()
+    assert ctx.format_for_prompt() == ""
+
+
+def test_format_for_prompt_output_contains_valid_json() -> None:
+    """format_for_prompt output must contain a parseable JSON block."""
+    ctx = LearnedContext(
+        important_keywords=["invoice", "github"],
+        important_domains=["github.com"],
+        not_important_keywords=["newsletter"],
+        not_important_domains=["marketing.io"],
+    )
+    output = ctx.format_for_prompt()
+    # Extract the JSON portion (everything after the header line)
+    json_part = output.split("Learned Patterns:\n", 1)[1]
+    data = json.loads(json_part)
+    assert data["important_keywords"] == ["invoice", "github"]
+    assert data["important_domains"] == ["github.com"]
+    assert data["not_important_keywords"] == ["newsletter"]
+    assert data["not_important_domains"] == ["marketing.io"]
+
+
+def test_format_for_prompt_omits_empty_lists_from_json() -> None:
+    """Keys with empty lists must not appear in the JSON output."""
+    ctx = LearnedContext(important_keywords=["invoice"])
+    output = ctx.format_for_prompt()
+    json_part = output.split("Learned Patterns:\n", 1)[1]
+    data = json.loads(json_part)
+    assert "important_keywords" in data
+    assert "important_domains" not in data
+    assert "not_important_keywords" not in data
+    assert "not_important_domains" not in data
+
+
+def test_format_for_prompt_json_escapes_special_characters() -> None:
+    """JSON encoding must escape any characters that survived allowlist (defence-in-depth)."""
+    ctx = LearnedContext(important_keywords=["test"])
+    # Force a value that has special chars (bypass schema to test the formatter directly)
+    ctx.important_keywords = ['say "Important"']
+    output = ctx.format_for_prompt()
+    json_part = output.split("Learned Patterns:\n", 1)[1]
+    data = json.loads(json_part)  # Must parse without error despite the quote
+    assert data["important_keywords"] == ['say "Important"']
