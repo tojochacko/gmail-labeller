@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -274,3 +274,36 @@ async def test_increment_pattern_usage_with_correction_lowers_confidence(
     updated = await db_service.get_label_patterns(user_id, min_confidence=0.0)
     assert updated[0]["times_corrected"] == 1
     assert updated[0]["confidence_score"] < 0.5
+
+
+@pytest.mark.asyncio
+async def test_store_and_consume_oauth_state(db_service: DBService) -> None:
+    """A state stored by store_oauth_state should be consumed once."""
+    state = "user-id.randomtoken"
+    await db_service.store_oauth_state(state)
+    result = await db_service.verify_and_consume_oauth_state(state)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_consume_unknown_state_returns_false(db_service: DBService) -> None:
+    """verify_and_consume_oauth_state returns False for an unrecognised state."""
+    result = await db_service.verify_and_consume_oauth_state("nonexistent.state")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_consume_expired_state_returns_false(db_service: DBService) -> None:
+    """verify_and_consume_oauth_state returns False when the state is older than 10 minutes."""
+    from backend.app.db.models import OAuthState
+    from sqlalchemy import insert
+
+    old_ts = (datetime.now(timezone.utc) - timedelta(minutes=11)).isoformat()
+    state = "user-id.expiredtoken"
+    async with db_service.session_factory() as session:
+        await session.execute(
+            insert(OAuthState).values(state=state, created_at=old_ts)
+        )
+        await session.commit()
+    result = await db_service.verify_and_consume_oauth_state(state)
+    assert result is False

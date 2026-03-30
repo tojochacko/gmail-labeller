@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..db.models import AgentRun, Email, GmailToken, LabelPattern, User
+from ..db.models import AgentRun, Email, GmailToken, LabelPattern, OAuthState, User
 from ..schemas.agent import AgentRunStatusResponse
 from ..schemas.email import EmailItem
 from ..schemas.oauth import GmailTokens
@@ -104,6 +104,32 @@ class DBService:
                 token_type=obj.token_type or "Bearer",
                 id_token=SecretStr(self._decrypt(obj.id_token)) if obj.id_token else None,
             )
+
+    # ------------------------------------------------------------------
+    # OAuth state (CSRF protection)
+    # ------------------------------------------------------------------
+
+    async def store_oauth_state(self, state: str) -> None:
+        """Persist an OAuth state string with a creation timestamp."""
+        created_at = datetime.now(timezone.utc).isoformat()
+        async with self._session_factory() as session:
+            session.add(OAuthState(state=state, created_at=created_at))
+            await session.commit()
+
+    async def verify_and_consume_oauth_state(self, state: str, ttl_minutes: int = 10) -> bool:
+        """Return True and delete the state if it exists and is not expired; False otherwise."""
+        async with self._session_factory() as session:
+            obj = await session.get(OAuthState, state)
+            if obj is None:
+                return False
+            created = datetime.fromisoformat(obj.created_at)
+            if datetime.now(timezone.utc) - created > timedelta(minutes=ttl_minutes):
+                await session.delete(obj)
+                await session.commit()
+                return False
+            await session.delete(obj)
+            await session.commit()
+            return True
 
     # ------------------------------------------------------------------
     # Emails
