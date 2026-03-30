@@ -62,6 +62,7 @@ class FakeDBService:
         self._oauth_states.add(state)
 
     async def verify_and_consume_oauth_state(self, state: str, ttl_minutes: int = 10) -> bool:
+        # TTL not implemented in fake; expiry tested at DB layer in test_db_service.py
         if state in self._oauth_states:
             self._oauth_states.discard(state)
             return True

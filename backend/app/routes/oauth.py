@@ -34,6 +34,7 @@ async def start_oauth_flow(
     """Kick off Gmail OAuth by returning an authorization URL."""
     state = f"{payload.user_id}.{secrets.token_urlsafe(16)}"
     await supabase.upsert_user(payload.user_id, payload.email)
+    # Store state server-side; verified and consumed in /callback to prevent CSRF
     await supabase.store_oauth_state(state)
     authorization_url = await gmail_service.create_authorization_url(
         state=state, user_id=str(payload.user_id)
