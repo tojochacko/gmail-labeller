@@ -96,5 +96,7 @@ class ClassificationSession(Base):
 class OAuthState(Base):
     __tablename__ = "oauth_states"
 
-    state = Column(String(100), primary_key=True)
-    created_at = Column(String(50), nullable=False)
+    state = Column(String(50), primary_key=True)
+    created_at = Column(
+        String(50), nullable=False, default=lambda: datetime.now(timezone.utc).isoformat()
+    )
