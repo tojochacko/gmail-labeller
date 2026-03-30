@@ -46,6 +46,17 @@ class LabelPatternUpdate(BaseModel):
         None, min_length=1, max_length=100, description="Updated pattern value"
     )
 
+    @field_validator("pattern_value")
+    @classmethod
+    def validate_pattern_value(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize and enforce character allowlist on pattern values."""
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        if not re.match(r"^[\w \-\.@]+$", normalized):
+            raise ValueError("pattern_value contains disallowed characters")
+        return normalized
+
 
 class LabelPattern(LabelPatternBase):
     """Complete label pattern with database fields.

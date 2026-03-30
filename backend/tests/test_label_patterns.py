@@ -6,7 +6,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas.label_patterns import LabelPatternBase, LearnedContext
+from backend.app.schemas.label_patterns import (
+    LabelPatternBase,
+    LabelPatternUpdate,
+    LearnedContext,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -68,3 +72,31 @@ def test_pattern_value_100_chars_accepted() -> None:
         pattern_value=value,
     )
     assert len(pattern.pattern_value) == 100
+
+
+# ---------------------------------------------------------------------------
+# LabelPatternUpdate validation tests
+# ---------------------------------------------------------------------------
+
+def test_pattern_update_with_valid_pattern_value() -> None:
+    """LabelPatternUpdate must validate pattern_value with same rules."""
+    update = LabelPatternUpdate(pattern_value="invoice")
+    assert update.pattern_value == "invoice"
+
+
+def test_pattern_update_rejects_disallowed_characters() -> None:
+    """LabelPatternUpdate must reject pattern_value with disallowed characters."""
+    with pytest.raises(ValidationError, match="disallowed characters"):
+        LabelPatternUpdate(pattern_value="keyword; DROP")
+
+
+def test_pattern_update_allows_none_pattern_value() -> None:
+    """LabelPatternUpdate must allow None for pattern_value."""
+    update = LabelPatternUpdate(confidence_score=0.8)
+    assert update.pattern_value is None
+
+
+def test_pattern_update_pattern_value_max_length() -> None:
+    """LabelPatternUpdate must reject pattern_value longer than 100 chars."""
+    with pytest.raises(ValidationError):
+        LabelPatternUpdate(pattern_value="a" * 101)
