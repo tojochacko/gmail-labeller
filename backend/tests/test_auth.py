@@ -9,6 +9,8 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from cryptography.fernet import Fernet
+
 from backend.app.auth import (
     create_access_token,
     decode_access_token,
@@ -21,7 +23,7 @@ def test_settings_requires_jwt_secret_key() -> None:
     """Settings must reject startup if JWT_SECRET_KEY is missing."""
     with pytest.raises(ValidationError):
         Settings(
-            FERNET_SECRET_KEY="dGVzdC10ZXN0LXRlc3QtdGVzdC10ZXN0LXRlc3QtdGVzdA==",
+            FERNET_SECRET_KEY=Fernet.generate_key().decode(),
             GOOGLE_OAUTH_CLIENT_ID="client-id",
             GOOGLE_OAUTH_CLIENT_SECRET="client-secret",
             GOOGLE_OAUTH_REDIRECT_URI="http://localhost:8000/callback",
