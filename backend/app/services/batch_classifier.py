@@ -79,7 +79,6 @@ class BatchClassifier:
         for email_row in emails:
             email_id_str = email_row.get("id")
             gmail_message_id = email_row.get("gmail_message_id")
-            subject = email_row.get("subject", "(no subject)")
 
             if not email_id_str or not gmail_message_id:
                 logger.warning("Skipping email row missing id or gmail_message_id: %s", email_row)
@@ -170,7 +169,11 @@ class BatchClassifier:
 
                 classified += 1
                 logger.info(
-                    "[%d/%d] Classified email_id=%s → %s", classified, total, email_id_str, suggestion
+                    "[%d/%d] Classified email_id=%s → %s",
+                    classified,
+                    total,
+                    email_id_str,
+                    suggestion,
                 )
 
             except Exception as e:
@@ -207,7 +210,9 @@ def _build_classification_prompt(email_row: dict) -> str:
         f"From: {sender}\n"
         f"Snippet: {snippet}\n\n"
         "Classify this email as 'Important' or 'Not Important'.\n"
-        "Also determine if this is a job posting, recruiter outreach, or automated job board alert.\n"
+        "Also determine if this is a job posting, recruiter outreach, or "
+        "automated job board alert.\n"
         'Respond in JSON: {"suggestion": "Important|Not Important", '
-        '"confidence": 0.0-1.0, "reasoning": "...", "is_job_alert": true|false}'
+        '"confidence": 0.0-1.0, "reasoning": "...", "is_job_alert": '
+        "true|false}"
     )

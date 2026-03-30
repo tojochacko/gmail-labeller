@@ -55,7 +55,10 @@ class EmailService:
         # is transmitted, making this more efficient than post-fetch filtering.
         effective_query = f"{query} -has:attachment" if query else "in:inbox -has:attachment"
 
-        logger.info(f"🔄 FETCH START: user={user_id}, max_results={max_results}, query={effective_query}")
+        logger.info(
+            f"🔄 FETCH START: user={user_id}, max_results={max_results}, "
+            f"query={effective_query}"
+        )
         tokens = await self._ensure_tokens(user_id)
         messages = await self._gmail_service.list_messages(
             tokens=tokens,
