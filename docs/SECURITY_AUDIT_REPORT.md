@@ -27,7 +27,7 @@
 | CRIT-01 | No authentication/authorization | **FIXED** — `require_auth` dep on all protected routes |
 | CRIT-02 | IDOR — user IDs accepted from client | **FIXED** — user_id derived from JWT, not request params |
 | CRIT-03 | Debug endpoints unauthenticated | **FIXED** — gated to ENVIRONMENT=development |
-| HIGH-01 | OAuth state not verified server-side | **NOT FIXED** |
+| HIGH-01 | OAuth state not verified server-side | **FIXED** — state stored on `/start`, verified+consumed on `/callback`; expired/replayed states return 400 |
 | HIGH-02 | No ownership check on session cleanup | **FIXED** — `_get_owned_session` ownership check on all session endpoints |
 | MED-01 | Wildcard CORS allow_methods / allow_headers | **NOT FIXED** |
 | MED-02 | No rate limiting | **NOT FIXED** |

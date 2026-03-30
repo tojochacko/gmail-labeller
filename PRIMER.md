@@ -38,18 +38,19 @@ Full JWT auth implementation across all FastAPI endpoints. Key changes:
 - **Docker:** `autogen-test-backend-1` running (`docker compose up -d` from project root to start)
 - **OAuth:** End-to-end flow working with JWT; CLI stores token and appends to review URL
 - **Auth:** All routes protected — unauthenticated requests return 401; cross-user access returns 403
-- **Security fixes:** CRIT-01, CRIT-02, CRIT-03, HIGH-02 resolved. See `docs/SECURITY_AUDIT_REPORT.md` for remaining open findings.
+- **Security fixes:** CRIT-01, CRIT-02, CRIT-03, HIGH-01, HIGH-02 resolved. HIGH-03 was already fixed (all session endpoints use `_get_owned_session`). See `docs/SECURITY_AUDIT_REPORT.md` for remaining open findings.
 - **Registered redirect URI:** `http://localhost:8001/api/oauth/callback` in Google Cloud Console
 
 ---
 
 ## Recommended Next Steps
 
-### Priority 1 — Remaining CRIT/HIGH findings (from `docs/SECURITY_AUDIT_REPORT.md`)
-- **HIGH-01**: OAuth state not verified server-side (replay attack possible)
-- **HIGH-03**: Prompt injection via learned patterns
-- **HIGH-04**: Unredacted snippets logged and sent to LLM
-- **HIGH-05**: Unfiltered patterns sent to LLM prompt (unbounded growth)
+### Priority 1 — Remaining HIGH findings (from `docs/SECURITY_AUDIT_REPORT.md`)
+
+**Next session: create implementation plans for remaining HIGH items.**
+
+- **HIGH-04**: Email snippet logged and sent to LLM unredacted — full subject+sender+snippet logged at INFO before Presidio, stored in DB unredacted at ingestion; Presidio absence silently passes through to LLM
+- **HIGH-05**: Prompt injection via learned patterns — extracted email-subject patterns injected verbatim into LLM prompts, unbounded growth
 
 ### Priority 2 — Add tests for the two job alert fixes (from prior session)
 - `test_job_alert_detector.py`: add cases for display-name format emails e.g. `"LinkedIn <jobs-listings@linkedin.com>"`
@@ -89,3 +90,4 @@ Saved in `docs/superpowers/plans/`:
 - `2026-03-29-crit-01-jwt-auth.md` — completed ✅
 - `2026-03-29-crit-04-xss-review-ui.md` — completed ✅
 - `2026-03-29-crit-05-csrf-review-ui.md` — completed ✅
+- `2026-03-30-high-01-oauth-state-verification.md` — completed ✅
