@@ -47,6 +47,7 @@ class FakeDBService:
         self.tokens: dict[UUID, GmailTokens] = {}
         self.emails: dict[UUID, EmailItem] = {}
         self.agent_runs: dict[UUID, AgentRunStatusResponse] = {}
+        self._oauth_states: set[str] = set()
 
     async def upsert_user(self, user_id: UUID, email: str) -> None:
         self.users[user_id] = email
@@ -56,6 +57,15 @@ class FakeDBService:
 
     async def fetch_gmail_tokens(self, user_id: UUID) -> GmailTokens | None:
         return self.tokens.get(user_id)
+
+    async def store_oauth_state(self, state: str) -> None:
+        self._oauth_states.add(state)
+
+    async def verify_and_consume_oauth_state(self, state: str, ttl_minutes: int = 10) -> bool:
+        if state in self._oauth_states:
+            self._oauth_states.discard(state)
+            return True
+        return False
 
     async def upsert_email(self, user_id: UUID, payload: EmailItem) -> None:
         self.emails[payload.id] = payload

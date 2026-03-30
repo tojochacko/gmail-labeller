@@ -34,6 +34,7 @@ async def start_oauth_flow(
     """Kick off Gmail OAuth by returning an authorization URL."""
     state = f"{payload.user_id}.{secrets.token_urlsafe(16)}"
     await supabase.upsert_user(payload.user_id, payload.email)
+    await supabase.store_oauth_state(state)
     authorization_url = await gmail_service.create_authorization_url(
         state=state, user_id=str(payload.user_id)
     )
@@ -59,6 +60,12 @@ async def oauth_callback(
         user_id = UUID(state.split(".")[0])
     except (ValueError, IndexError):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter.")
+    valid = await supabase.verify_and_consume_oauth_state(state)
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired OAuth state parameter.",
+        )
     tokens = await gmail_service.exchange_code_for_tokens(code)
     await supabase.store_gmail_tokens(user_id, tokens)
     logger.info("Stored Gmail OAuth tokens for user {}", user_id)

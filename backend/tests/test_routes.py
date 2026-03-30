@@ -29,8 +29,13 @@ def test_oauth_start_returns_authorization_url(client: TestClient) -> None:
 def test_oauth_callback_stores_tokens_and_returns_token(
     client: TestClient, fake_supabase
 ) -> None:
+    """Callback succeeds when the state matches a pre-stored value."""
+    import asyncio
     user_id = uuid4()
     state = f"{user_id}.somesecret"
+    asyncio.get_event_loop().run_until_complete(
+        fake_supabase.store_oauth_state(state)
+    )
     response = client.get(f"/api/oauth/callback?code=auth-code&state={state}")
     assert response.status_code == 200
     data = response.json()
@@ -38,6 +43,37 @@ def test_oauth_callback_stores_tokens_and_returns_token(
     assert "access_token" in data
     assert isinstance(data["access_token"], str) and len(data["access_token"]) > 20
     assert user_id in fake_supabase.tokens
+
+
+def test_oauth_callback_rejects_unknown_state(client: TestClient) -> None:
+    """Callback returns 400 when the state was never stored server-side."""
+    user_id = uuid4()
+    state = f"{user_id}.unknowntoken"
+    response = client.get(f"/api/oauth/callback?code=auth-code&state={state}")
+    assert response.status_code == 400
+    assert "state" in response.json()["detail"].lower()
+
+
+def test_oauth_callback_rejects_replayed_state(
+    client: TestClient, fake_supabase
+) -> None:
+    """Callback returns 400 on second use of the same state (replay prevention)."""
+    import asyncio
+    user_id = uuid4()
+    state = f"{user_id}.onceonly"
+    asyncio.get_event_loop().run_until_complete(
+        fake_supabase.store_oauth_state(state)
+    )
+    r1 = client.get(f"/api/oauth/callback?code=auth-code&state={state}")
+    assert r1.status_code == 200
+    r2 = client.get(f"/api/oauth/callback?code=auth-code&state={state}")
+    assert r2.status_code == 400
+
+
+def test_oauth_callback_rejects_invalid_state_format(client: TestClient) -> None:
+    """Callback returns 400 when the state string has no user_id prefix."""
+    response = client.get("/api/oauth/callback?code=auth-code&state=notauuid")
+    assert response.status_code == 400
 
 
 def test_list_emails_requires_auth(client: TestClient) -> None:
