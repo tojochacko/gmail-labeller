@@ -1,6 +1,7 @@
 """Tests for job alert labeling in BatchClassifier."""
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -154,8 +155,6 @@ async def test_prompt_content_not_logged_at_info(
     mock_repo, mock_db, mock_gmail_service, mock_agent_service, caplog
 ) -> None:
     """Full prompt text (subject + sender + snippet) must not appear in INFO logs."""
-    import logging
-
     classifier = BatchClassifier(
         session_repo=mock_repo,
         db=mock_db,
@@ -166,7 +165,7 @@ async def test_prompt_content_not_logged_at_info(
     with caplog.at_level(logging.INFO, logger="backend.app.services.batch_classifier"):
         await classifier.run_batch(session_id=SESSION_ID, user_id=USER_ID)
 
-    info_text = " ".join(r.message for r in caplog.records if r.levelno == logging.INFO)
+    info_text = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.INFO)
     # The email snippet must not appear verbatim in INFO logs
     assert "Senior Python roles" not in info_text
     # The sender email must not appear verbatim in INFO logs

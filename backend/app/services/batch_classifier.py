@@ -125,9 +125,9 @@ class BatchClassifier:
                     if result and result.result_payload:
                         suggestion = result.result_payload.get("suggestion")
                         llm_is_job_alert = bool(result.result_payload.get("is_job_alert", False))
-                        logger.info(
-                            "LLM response for '%s': %s",
-                            subject[:60],
+                        logger.debug(
+                            "LLM response for email_id=%s: %s",
+                            email_id_str,
                             result.result_payload,
                         )
 
