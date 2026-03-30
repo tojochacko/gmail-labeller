@@ -98,3 +98,32 @@ class TestLazyInitialization:
         analyzer_ref = redactor._analyzer
         redactor.redact("second call at test@example.com")
         assert redactor._analyzer is analyzer_ref
+
+
+class TestIsAvailable:
+    def test_is_available_returns_false_when_presidio_absent(
+        self, monkeypatch,
+    ) -> None:
+        """is_available returns False when presidio_analyzer cannot be imported."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if name.startswith("presidio"):
+                raise ImportError("presidio not installed")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+        redactor = PIIRedactor()
+        assert redactor.is_available() is False
+
+    def test_is_available_returns_true_when_presidio_present(self) -> None:
+        """is_available returns True when Presidio loads successfully."""
+        redactor = PIIRedactor()
+        # This test is skipped if presidio is not installed in the test environment.
+        try:
+            import presidio_analyzer  # noqa: F401
+        except ImportError:
+            pytest.skip("presidio-analyzer not installed")
+        assert redactor.is_available() is True

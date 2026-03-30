@@ -109,6 +109,14 @@ class PIIRedactor:
 
         self._initialized = True
 
+    def is_available(self) -> bool:
+        """Return True if Presidio engines loaded successfully.
+
+        Triggers lazy initialization on first call.
+        """
+        self._ensure_initialized()
+        return self._analyzer is not None and self._anonymizer is not None
+
     def redact(self, text: str) -> RedactionResult:
         """Replace PII entities in *text* with type-labelled placeholder tokens.
 
