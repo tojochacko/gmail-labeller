@@ -170,3 +170,5 @@ async def test_prompt_content_not_logged_at_info(
     assert "Senior Python roles" not in info_text
     # The sender email must not appear verbatim in INFO logs
     assert "jobs-noreply@linkedin.com" not in info_text
+    # The subject must not appear verbatim in INFO logs
+    assert "3 new jobs matching Python Engineer" not in info_text

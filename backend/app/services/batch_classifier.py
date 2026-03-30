@@ -97,10 +97,10 @@ class BatchClassifier:
                 if filter_result.skip_llm:
                     suggestion = filter_result.label
                     logger.info(
-                        "[%d/%d] Local filter: '%s' → %s (%s)",
+                        "[%d/%d] Local filter: email_id=%s → %s (%s)",
                         classified + 1,
                         total,
-                        subject[:50],
+                        email_id_str,
                         suggestion,
                         filter_result.reason,
                     )
@@ -170,7 +170,7 @@ class BatchClassifier:
 
                 classified += 1
                 logger.info(
-                    "[%d/%d] Classified '%s' → %s", classified, total, subject[:50], suggestion
+                    "[%d/%d] Classified email_id=%s → %s", classified, total, email_id_str, suggestion
                 )
 
             except Exception as e:
