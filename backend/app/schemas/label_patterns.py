@@ -1,5 +1,6 @@
 """Label patterns schemas for AI learning."""
 
+import re
 from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
@@ -14,7 +15,7 @@ class LabelPatternBase(BaseModel):
         ..., description="Category this pattern belongs to"
     )
     pattern_type: Literal["domain", "keyword"] = Field(..., description="Type of pattern")
-    pattern_value: str = Field(..., min_length=1, max_length=500, description="The pattern value")
+    pattern_value: str = Field(..., min_length=1, max_length=100, description="The pattern value")
     confidence_score: float = Field(
         default=1.0, ge=0.0, le=1.0, description="Confidence score 0.0-1.0"
     )
@@ -22,8 +23,11 @@ class LabelPatternBase(BaseModel):
     @field_validator("pattern_value")
     @classmethod
     def validate_pattern_value(cls, v: str) -> str:
-        """Ensure pattern value is normalized."""
-        return v.strip().lower()
+        """Normalize and enforce character allowlist on pattern values."""
+        normalized = v.strip().lower()
+        if not re.match(r"^[\w \-\.@]+$", normalized):
+            raise ValueError("pattern_value contains disallowed characters")
+        return normalized
 
 
 class LabelPatternCreate(LabelPatternBase):
@@ -39,7 +43,7 @@ class LabelPatternUpdate(BaseModel):
         None, ge=0.0, le=1.0, description="Updated confidence score"
     )
     pattern_value: Optional[str] = Field(
-        None, min_length=1, max_length=500, description="Updated pattern value"
+        None, min_length=1, max_length=100, description="Updated pattern value"
     )
 
 
