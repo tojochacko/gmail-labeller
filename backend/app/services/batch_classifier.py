@@ -107,7 +107,7 @@ class BatchClassifier:
                 else:
                     # Build classification prompt from email fields
                     prompt = _build_classification_prompt(email_row)
-                    logger.info("Prompt for '%s':\n%s", subject[:60], prompt)
+                    logger.debug("Built prompt for email_id=%s", email_id_str)
 
                     run = await self._agent_service.trigger_agent_run(
                         AgentRunRequest(

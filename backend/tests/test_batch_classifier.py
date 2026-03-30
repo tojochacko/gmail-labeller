@@ -147,3 +147,27 @@ async def test_non_job_alert_does_not_get_tag(
         or mock_gmail_service.apply_label.call_args.args[1]
     )
     assert call_label == "Important"
+
+
+@pytest.mark.asyncio
+async def test_prompt_content_not_logged_at_info(
+    mock_repo, mock_db, mock_gmail_service, mock_agent_service, caplog
+) -> None:
+    """Full prompt text (subject + sender + snippet) must not appear in INFO logs."""
+    import logging
+
+    classifier = BatchClassifier(
+        session_repo=mock_repo,
+        db=mock_db,
+        agent_service=mock_agent_service,
+        gmail_service=mock_gmail_service,
+    )
+
+    with caplog.at_level(logging.INFO, logger="backend.app.services.batch_classifier"):
+        await classifier.run_batch(session_id=SESSION_ID, user_id=USER_ID)
+
+    info_text = " ".join(r.message for r in caplog.records if r.levelno == logging.INFO)
+    # The email snippet must not appear verbatim in INFO logs
+    assert "Senior Python roles" not in info_text
+    # The sender email must not appear verbatim in INFO logs
+    assert "jobs-noreply@linkedin.com" not in info_text
