@@ -13,6 +13,7 @@ from ..schemas.email import EmailItem
 from ..schemas.oauth import GmailTokens
 from .gmail_toolkit import GmailService
 from .db_service import DBService as SupabaseService
+from .pii_redactor import PIIRedactor
 
 
 logger = logging.getLogger(__name__)
@@ -26,9 +27,20 @@ class EmailService:
         gmail_service: GmailService,
         supabase: SupabaseService,
         settings=None,
+        pii_redactor: PIIRedactor | None = None,
     ) -> None:
         self._gmail_service = gmail_service
         self._supabase = supabase
+        self._pii_redactor = pii_redactor or PIIRedactor()
+
+    def _redact_email_item(self, item: EmailItem) -> None:
+        """Redact PII from mutable EmailItem fields in-place before DB storage."""
+        if item.subject:
+            item.subject = self._pii_redactor.redact(item.subject).text
+        if item.snippet:
+            item.snippet = self._pii_redactor.redact(item.snippet).text
+        if item.sender_email:
+            item.sender_email = self._pii_redactor.redact(item.sender_email).text
 
     async def fetch_latest_emails(
         self, user_id: UUID, max_results: int = 20, query: str | None = None
@@ -69,6 +81,7 @@ class EmailService:
             else:
                 new_count += 1
 
+            self._redact_email_item(item)
             await self._supabase.upsert_email(user_id, item)
             items.append(item)
 

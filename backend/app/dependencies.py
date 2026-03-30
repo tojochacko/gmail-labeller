@@ -21,9 +21,11 @@ from .services import (
     PatternLearningService,
     SessionRepository,
 )
+from .services.pii_redactor import PIIRedactor
 
 _db_service: DBService | None = None
 _gmail_service: GmailService | None = None
+_pii_redactor: PIIRedactor | None = None
 
 
 def get_db_service(settings: Settings = Depends(get_settings)) -> DBService:
@@ -51,7 +53,10 @@ def get_email_service(
     db: DBService = Depends(get_db_service),
     settings: Settings = Depends(get_settings),
 ) -> EmailService:
-    return EmailService(gmail_service, db, settings)
+    global _pii_redactor
+    if _pii_redactor is None:
+        _pii_redactor = PIIRedactor()
+    return EmailService(gmail_service, db, settings, pii_redactor=_pii_redactor)
 
 
 def get_label_service(
