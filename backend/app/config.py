@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr
+from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -56,6 +56,20 @@ class Settings(BaseSettings):
         env_file = "config/.env"
         case_sensitive = True
         extra = "ignore"
+
+    @model_validator(mode="after")
+    def validate_presidio_for_cloud_llm(self) -> "Settings":
+        """Fail fast if a cloud LLM key is set but Presidio is not installed."""
+        if self.openai_api_key:
+            try:
+                import presidio_analyzer  # noqa: F401
+            except ImportError:
+                raise ValueError(
+                    "presidio-analyzer must be installed when OPENAI_API_KEY is set. "
+                    "Run: uv add presidio-analyzer presidio-anonymizer "
+                    "&& python -m spacy download en_core_web_lg"
+                )
+        return self
 
     @property
     def oauth_client(self) -> OAuthClient:
